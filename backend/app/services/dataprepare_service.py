@@ -40,3 +40,27 @@ def make_first_row_header(data):
         "columns": new_columns,
         "rows": new_rows
     }
+
+def apply_step(data, step):
+    action = step["action"]
+    payload = step["payload"]
+
+    if action == "delete_column":
+        return delete_column(data, payload["column"])
+
+    elif action == "remove_rows":
+        return remove_rows(data, payload["rows"])
+
+    elif action == "make_header":
+        return make_first_row_header(data)
+
+    return data
+
+
+def replay_steps(original_data, steps):
+    data = original_data
+
+    for step in steps:
+        data = apply_step(data, step)
+
+    return data
