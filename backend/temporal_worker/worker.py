@@ -2,21 +2,41 @@ import asyncio
 from temporalio.client import Client
 from temporalio.worker import Worker
 
-from temporal_worker.workflows import HelloWorkflow
-from temporal_worker.activities import say_hello
+from temporal_worker.workflows import HelloWorkflow, DataPrepareWorkflow
+from temporal_worker.activities import (
+    say_hello,
+    delete_column,
+    make_header,
+    remove_rows,
+)
+
+
+# 🔥 Retry connection to Temporal
+async def connect_temporal():
+    while True:
+        try:
+            print("⏳ Connecting to Temporal at localhost:7233...")
+            client = await Client.connect("localhost:7233")
+            print("✅ Connected to Temporal!")
+            return client
+        except Exception as e:
+            print(f"❌ Connection failed: {e}")
+            print("🔁 Retrying in 3 seconds...\n")
+            await asyncio.sleep(3)
 
 
 async def main():
-    client = await Client.connect("localhost:7233")
+    # ✅ Use retry connection instead of direct connect
+    client = await connect_temporal()
 
     worker = Worker(
         client,
         task_queue="hello-task-queue",
-        workflows=[HelloWorkflow],
-        activities=[say_hello],
+        workflows=[HelloWorkflow, DataPrepareWorkflow],
+        activities=[say_hello, delete_column, make_header, remove_rows],
     )
 
-    print("Worker started...")
+    print("🚀 Worker started...")
     await worker.run()
 
 
