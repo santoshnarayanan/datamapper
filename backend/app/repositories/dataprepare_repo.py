@@ -39,3 +39,15 @@ def save_or_update_steps(db, workflow_id, worksheet_id, steps):
     db.refresh(dp)
 
     return dp
+
+def save_snapshot(db, dp, step_number, data):
+    snapshots = dp.snapshots or {}
+
+    snapshots[str(step_number)] = data
+
+    dp.snapshots = snapshots
+    # ensure the SQLALchemy detects change
+    db.add(dp)
+    db.refresh(dp)
+
+    return dp
