@@ -110,7 +110,16 @@ async def apply_transformation(
             task_queue="hello-task-queue",
         )
 
-        updated_data = await handle.result()
+        result = await handle.result()
+
+        if result["status"] == "failed":
+            return {
+                "error": result["error"],
+                "failed_step": result["failed_step"],
+                "execution_log": result["execution_log"]
+            }
+
+        updated_data = result["data"]
 
         # ===============================
         # Step 8: Save snapshot (post-state)
@@ -181,7 +190,16 @@ async def undo_last_step(
         task_queue="hello-task-queue",
     )
 
-    updated_data = await handle.result()
+    result = await handle.result()
+
+    if result["status"] == "failed":
+        return {
+            "error": result["error"],
+            "failed_step": result["failed_step"],
+            "execution_log": result["execution_log"]
+        }
+
+    updated_data = result["data"]
 
     # Step 3: Save updated steps
     save_or_update_steps(db, workflow_id, worksheet_id, steps)
