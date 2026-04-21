@@ -36,17 +36,20 @@ async def apply_transformation(
     try:
         dp = get_dataprepare(db, workflow_id, worksheet_id)
 
-        # 🔥 FIX 1: ensure fresh copy of steps
+        # 🔥 FIX: Ensure dp exists
+        if not dp:
+            save_or_update_steps(db, workflow_id, worksheet_id, [])
+            db.commit()
+            dp = get_dataprepare(db, workflow_id, worksheet_id)
+
         steps = list(dp.steps) if dp and dp.steps else []
 
         new_step = {
             "action": action,
             "payload": payload
         }
-        steps.append(new_step)
 
-        save_or_update_steps(db, workflow_id, worksheet_id, steps)
-        db.commit()
+        temp_steps = steps + [new_step]
 
         dp = get_dataprepare(db, workflow_id, worksheet_id)
         snapshots = dp.snapshots or {}
@@ -71,7 +74,7 @@ async def apply_transformation(
         else:
             base_data = worksheet.data
 
-        remaining_steps = steps[last_step:]
+        remaining_steps = temp_steps[last_step:]
 
         client = await Client.connect("localhost:7233")
 
@@ -90,7 +93,7 @@ async def apply_transformation(
         result = await handle.result()
 
         # ===============================
-        # Step 5.4: Save execution logs
+        # Save execution logs
         # ===============================
         from datetime import datetime
 
@@ -117,8 +120,11 @@ async def apply_transformation(
 
         updated_data = result["data"]
 
+        # 🔥 SAVE STEPS ONLY AFTER SUCCESS
+        save_or_update_steps(db, workflow_id, worksheet_id, temp_steps)
+
         dp.snapshots = dp.snapshots or {}
-        dp.snapshots[str(len(steps))] = updated_data
+        dp.snapshots[str(len(temp_steps))] = updated_data
 
         flag_modified(dp, "snapshots")
         db.add(dp)
@@ -129,7 +135,7 @@ async def apply_transformation(
         return {
             "columns": updated_data["columns"],
             "rows": updated_data["rows"][:50],
-            "steps_count": len(steps)
+            "steps_count": len(temp_steps)
         }
 
     except Exception as e:
