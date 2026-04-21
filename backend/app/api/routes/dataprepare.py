@@ -26,9 +26,6 @@ async def apply_transformation(
     payload: dict,
     db: Session = Depends(get_db)
 ):
-    # ===============================
-    # Step 1: Load worksheet
-    # ===============================
     worksheet = db.query(Worksheet).filter(
         Worksheet.id == worksheet_id
     ).first()
@@ -37,53 +34,36 @@ async def apply_transformation(
         return {"error": "Worksheet not found"}
 
     try:
-        # ===============================
-        # Step 2: Load existing steps
-        # ===============================
         dp = get_dataprepare(db, workflow_id, worksheet_id)
-        steps = dp.steps if dp and dp.steps else []
 
-        # ===============================
-        # Step 3: Append new step
-        # ===============================
+        # 🔥 FIX 1: ensure fresh copy of steps
+        steps = list(dp.steps) if dp and dp.steps else []
+
         new_step = {
             "action": action,
             "payload": payload
         }
         steps.append(new_step)
 
-        # ===============================
-        # Step 4: Save steps FIRST
-        # ===============================
         save_or_update_steps(db, workflow_id, worksheet_id, steps)
         db.commit()
 
-        # ===============================
-        # Step 5: Reload dp (CRITICAL)
-        # ===============================
         dp = get_dataprepare(db, workflow_id, worksheet_id)
         snapshots = dp.snapshots or {}
 
-        # ===============================
-        # Step 5A: Ensure snapshot[0] exists
-        # ===============================
         from sqlalchemy.orm.attributes import flag_modified
 
         if not snapshots:
             dp.snapshots = {
-                "0": worksheet.data   # original state
+                "0": worksheet.data
             }
             flag_modified(dp, "snapshots")
             db.add(dp)
             db.commit()
 
-            # reload again after insert
             dp = get_dataprepare(db, workflow_id, worksheet_id)
             snapshots = dp.snapshots or {}
 
-        # ===============================
-        # Step 6: Smart replay logic
-        # ===============================
         last_step = max([int(k) for k in snapshots.keys()], default=0)
 
         if last_step > 0:
@@ -93,9 +73,6 @@ async def apply_transformation(
 
         remaining_steps = steps[last_step:]
 
-        # ===============================
-        # Step 7: Call Temporal Workflow
-        # ===============================
         client = await Client.connect("localhost:7233")
 
         temporal_workflow_id = f"dp-{uuid.uuid4()}"
@@ -116,7 +93,6 @@ async def apply_transformation(
         # Step 5.4: Save execution logs
         # ===============================
         from datetime import datetime
-        from sqlalchemy.orm.attributes import flag_modified
 
         dp.execution_logs = dp.execution_logs or []
 
@@ -141,18 +117,12 @@ async def apply_transformation(
 
         updated_data = result["data"]
 
-        # ===============================
-        # Step 8: Save snapshot (post-state)
-        # ===============================
         dp.snapshots = dp.snapshots or {}
         dp.snapshots[str(len(steps))] = updated_data
 
         flag_modified(dp, "snapshots")
         db.add(dp)
 
-        # ===============================
-        # Step 9: Save updated worksheet
-        # ===============================
         worksheet.data = updated_data
         db.commit()
 
@@ -168,6 +138,7 @@ async def apply_transformation(
             "error": str(e),
             "message": "DataPrepare execution failed"
         }
+
 
 # ===============================
 # UNDO LAST STEP
@@ -190,15 +161,17 @@ async def undo_last_step(
     if not dp or not dp.steps:
         return {"error": "No steps to undo"}
 
-    # Step 1: Remove last step
     steps = dp.steps[:-1]
 
     snapshots = dp.snapshots or {}
-
-    # Always start from original snapshot
     original_data = snapshots.get("0", worksheet.data)
 
-    # 🚀 Step 2: Call Temporal Workflow (FIXED)
+    # 🔥 FIX 2: clean snapshots after undo
+    valid_keys = set(str(i) for i in range(len(steps) + 1))
+    dp.snapshots = {
+        k: v for k, v in snapshots.items() if k in valid_keys
+    }
+
     client = await Client.connect("localhost:7233")
 
     temporal_workflow_id = f"undo-{uuid.uuid4()}"
@@ -208,12 +181,31 @@ async def undo_last_step(
         {
             "data": original_data,
             "steps": steps
-        },   # ✅ SINGLE INPUT (DICT)
+        },
         id=temporal_workflow_id,
         task_queue="hello-task-queue",
     )
 
     result = await handle.result()
+
+    # ===============================
+    # Step 5.4: Save execution logs (UNDO)
+    # ===============================
+    from datetime import datetime
+    from sqlalchemy.orm.attributes import flag_modified
+
+    dp.execution_logs = dp.execution_logs or []
+
+    dp.execution_logs.append({
+        "run_id": temporal_workflow_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "execution_log": result.get("execution_log", []),
+        "status": result.get("status"),
+        "type": "undo"
+    })
+
+    flag_modified(dp, "execution_logs")
+    db.add(dp)
 
     if result["status"] == "failed":
         db.commit()
@@ -225,23 +217,14 @@ async def undo_last_step(
 
     updated_data = result["data"]
 
-    from sqlalchemy.orm.attributes import flag_modified
-
-    # ===============================
-    # Update snapshots after undo
-    # ===============================
     dp.snapshots = dp.snapshots or {}
-
-    # New snapshot index = current number of steps
     dp.snapshots[str(len(steps))] = updated_data
 
     flag_modified(dp, "snapshots")
     db.add(dp)
 
-    # Step 3: Save updated steps
     save_or_update_steps(db, workflow_id, worksheet_id, steps)
 
-    # Step 4: Save updated data
     worksheet.data = updated_data
     db.commit()
 
