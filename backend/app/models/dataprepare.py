@@ -25,7 +25,8 @@ class DataPrepare(Base):
     )
 
     steps = Column(JSONB)       # operations
-    snapshots = Column(JSONB, default=dict)   # history
+    snapshots = Column(JSONB, default=dict)
+    execution_logs = Column(JSONB, default=list)# history
 
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())

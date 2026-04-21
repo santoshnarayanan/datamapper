@@ -112,7 +112,27 @@ async def apply_transformation(
 
         result = await handle.result()
 
+        # ===============================
+        # Step 5.4: Save execution logs
+        # ===============================
+        from datetime import datetime
+        from sqlalchemy.orm.attributes import flag_modified
+
+        dp.execution_logs = dp.execution_logs or []
+
+        dp.execution_logs.append({
+            "run_id": temporal_workflow_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "execution_log": result.get("execution_log", []),
+            "status": result.get("status"),
+            "type": "apply"
+        })
+
+        flag_modified(dp, "execution_logs")
+        db.add(dp)
+
         if result["status"] == "failed":
+            db.commit()
             return {
                 "error": result["error"],
                 "failed_step": result["failed_step"],
@@ -173,7 +193,10 @@ async def undo_last_step(
     # Step 1: Remove last step
     steps = dp.steps[:-1]
 
-    original_data = worksheet.data
+    snapshots = dp.snapshots or {}
+
+    # Always start from original snapshot
+    original_data = snapshots.get("0", worksheet.data)
 
     # 🚀 Step 2: Call Temporal Workflow (FIXED)
     client = await Client.connect("localhost:7233")
@@ -193,6 +216,7 @@ async def undo_last_step(
     result = await handle.result()
 
     if result["status"] == "failed":
+        db.commit()
         return {
             "error": result["error"],
             "failed_step": result["failed_step"],
@@ -200,6 +224,19 @@ async def undo_last_step(
         }
 
     updated_data = result["data"]
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    # ===============================
+    # Update snapshots after undo
+    # ===============================
+    dp.snapshots = dp.snapshots or {}
+
+    # New snapshot index = current number of steps
+    dp.snapshots[str(len(steps))] = updated_data
+
+    flag_modified(dp, "snapshots")
+    db.add(dp)
 
     # Step 3: Save updated steps
     save_or_update_steps(db, workflow_id, worksheet_id, steps)
