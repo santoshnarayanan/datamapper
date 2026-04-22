@@ -23,10 +23,13 @@ To preserve:
 
 
 from temporalio import workflow
+
 from datetime import timedelta
+from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
-    from app.temporal.activities import apply_step_activity
+    from temporal.activities import apply_step_activity
+
 
 
 @workflow.defn
@@ -42,14 +45,13 @@ class DataPreparationWorkflow:
             try:
                 current_data = await workflow.execute_activity(
                     apply_step_activity,
-                    step,
-                    current_data,
+                    args=[step, current_data],
                     start_to_close_timeout=timedelta(seconds=10),
-                    retry_policy={
-                        "maximum_attempts": 3,
-                        "initial_interval": timedelta(seconds=1),
-                        "backoff_coefficient": 2.0,
-                    },
+                    retry_policy=RetryPolicy(
+                        maximum_attempts=3,
+                        initial_interval=timedelta(seconds=1),
+                        backoff_coefficient=2.0,
+                    ),
                 )
 
                 # Execution logs capture step-by-step workflow behavior.
@@ -76,11 +78,14 @@ class DataPreparationWorkflow:
                 return {
                     "status": "FAILED",
                     "failed_step": idx,
+                    "error": str(e),
                     "logs": execution_logs
                 }
 
         return {
             "status": "SUCCESS",
             "data": current_data,
+            "steps": steps,  # ✅ REQUIRED
+            "snapshots": {},  # ✅ REQUIRED (even if empty for now)
             "logs": execution_logs
         }

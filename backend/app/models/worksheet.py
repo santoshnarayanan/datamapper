@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, String, TIMESTAMP, ForeignKey
+from sqlalchemy import Column, String, TIMESTAMP, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -20,6 +20,9 @@ class Worksheet(Base):
 
     name = Column(String)
     data = Column(JSONB, nullable=False)
+
+    # 🔥 NEW COLUMN (Phase 6.2)
+    version = Column(Integer, nullable=False, default=1)
 
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())

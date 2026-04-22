@@ -1,3 +1,6 @@
+from models import DataPrepare
+
+
 def delete_column(data, column_name):
     columns = data["columns"]
     rows = data["rows"]
@@ -64,3 +67,33 @@ def replay_steps(original_data, steps):
         data = apply_step(data, step)
 
     return data
+
+def handle_replay_result(db, workflow_id, worksheet_id, result):
+    """
+    Save replay result safely
+    """
+
+    if result["status"] == "SUCCESS":
+
+        dp = DataPrepare(
+            workflow_id=workflow_id,
+            worksheet_id=worksheet_id,
+            steps=result.get("steps", []),
+            snapshots=result.get("snapshots", {}),
+            execution_logs=result.get("logs", [])
+        )
+
+        db.add(dp)
+        db.commit()
+        db.refresh(dp)
+
+        return {"status": "saved"}
+
+    else:
+        # 🔥 CRITICAL RULE
+        # Do NOT overwrite previous successful state
+
+        return {
+            "status": "failed",
+            "reason": "Replay failed — previous version preserved"
+        }

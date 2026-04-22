@@ -20,7 +20,7 @@ This ensures:
 """
 
 from temporalio import activity
-from temporalio.exceptions import ApplicationFailure
+from temporalio.exceptions import ApplicationError
 
 from app.services.step_executor import execute_step
 from app.core.exceptions import StepExecutionError
@@ -33,12 +33,11 @@ async def apply_step_activity(step: dict, data: list):
 
     except StepExecutionError as e:
 
-        # 🔥 Key Logic
         if e.retryable:
-            raise Exception(e.message)  # Temporal will retry
+            raise Exception(e.message)
 
         else:
-            raise ApplicationFailure(
+            raise ApplicationError(
                 message=e.message,
                 non_retryable=True
             )
