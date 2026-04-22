@@ -15,6 +15,23 @@ from temporal_worker.workflows import DataPrepareWorkflow
 router = APIRouter()
 
 
+@router.post("/run-data-prepare")
+async def run_data_prepare(payload: dict):
+
+    client = await Client.connect("localhost:7233")
+
+    handle = await client.start_workflow(
+        "DataPreparationWorkflow.run",
+        payload["steps"],
+        payload["data"],
+        id=f"workflow-{payload['workflow_id']}",
+        task_queue="data-prepare-queue",
+    )
+
+    result = await handle.result()
+
+    return result
+
 # ===============================
 # APPLY TRANSFORMATION
 # ===============================
@@ -239,3 +256,4 @@ async def undo_last_step(
         "rows": updated_data["rows"][:50],
         "steps_count": len(steps)
     }
+
