@@ -7,23 +7,41 @@ from app.core.database import get_db
 from app.models.worksheet import Worksheet
 
 from app.repositories.dataprepare_repo import (
-    get_dataprepare, save_or_update_steps, save_snapshot
+    get_dataprepare, save_or_update_steps
 )
 
-from temporal_worker.workflows import DataPrepareWorkflow
+from app.temporal.workflows import DataPreparationWorkflow
 
 router = APIRouter()
 
 
+# ===============================
+# 🔥 NORMALIZE DATA (CRITICAL FIX)
+# ===============================
+def normalize_data(data):
+    """
+    Ensures data is always in:
+    { columns: [...], rows: [...] }
+    """
+    if isinstance(data, list):
+        return {
+            "columns": list(data[0].keys()) if data else [],
+            "rows": data
+        }
+    return data
+
+
+# ===============================
+# RUN DATA PREPARE (TEST ENDPOINT)
+# ===============================
 @router.post("/run-data-prepare")
 async def run_data_prepare(payload: dict):
 
     client = await Client.connect("localhost:7233")
 
     handle = await client.start_workflow(
-        "DataPreparationWorkflow.run",
-        payload["steps"],
-        payload["data"],
+        DataPreparationWorkflow.run,
+        args=[payload["steps"], normalize_data(payload["data"])],
         id=f"workflow-{payload['workflow_id']}",
         task_queue="data-prepare-queue",
     )
@@ -31,6 +49,7 @@ async def run_data_prepare(payload: dict):
     result = await handle.result()
 
     return result
+
 
 # ===============================
 # APPLY TRANSFORMATION
@@ -53,7 +72,7 @@ async def apply_transformation(
     try:
         dp = get_dataprepare(db, workflow_id, worksheet_id)
 
-        # 🔥 FIX: Ensure dp exists
+        # Ensure dp exists
         if not dp:
             save_or_update_steps(db, workflow_id, worksheet_id, [])
             db.commit()
@@ -62,8 +81,8 @@ async def apply_transformation(
         steps = list(dp.steps) if dp and dp.steps else []
 
         new_step = {
-            "action": action,
-            "payload": payload
+            "operation": action,
+            **payload
         }
 
         temp_steps = steps + [new_step]
@@ -73,9 +92,12 @@ async def apply_transformation(
 
         from sqlalchemy.orm.attributes import flag_modified
 
+        # ===============================
+        # Initialize snapshot (normalized)
+        # ===============================
         if not snapshots:
             dp.snapshots = {
-                "0": worksheet.data
+                "0": normalize_data(worksheet.data)
             }
             flag_modified(dp, "snapshots")
             db.add(dp)
@@ -87,9 +109,12 @@ async def apply_transformation(
         last_step = max([int(k) for k in snapshots.keys()], default=0)
 
         if last_step > 0:
-            base_data = snapshots[str(last_step)]
+            base_data = normalize_data(snapshots[str(last_step)])
         else:
             base_data = worksheet.data
+
+        # 🔥 NORMALIZE HERE (CRITICAL)
+        base_data = normalize_data(base_data)
 
         remaining_steps = temp_steps[last_step:]
 
@@ -98,13 +123,10 @@ async def apply_transformation(
         temporal_workflow_id = f"dp-{uuid.uuid4()}"
 
         handle = await client.start_workflow(
-            DataPrepareWorkflow.run,
-            {
-                "data": base_data,
-                "steps": remaining_steps
-            },
+            DataPreparationWorkflow.run,
+            args=[remaining_steps, base_data],
             id=temporal_workflow_id,
-            task_queue="hello-task-queue",
+            task_queue="data-prepare-queue",
         )
 
         result = await handle.result()
@@ -119,7 +141,7 @@ async def apply_transformation(
         dp.execution_logs.append({
             "run_id": temporal_workflow_id,
             "timestamp": datetime.utcnow().isoformat(),
-            "execution_log": result.get("execution_log", []),
+            "execution_log": result.get("logs", []),
             "status": result.get("status"),
             "type": "apply"
         })
@@ -127,26 +149,26 @@ async def apply_transformation(
         flag_modified(dp, "execution_logs")
         db.add(dp)
 
-        if result["status"] == "failed":
+        if result["status"] == "FAILED":
             db.commit()
             return {
-                "error": result["error"],
-                "failed_step": result["failed_step"],
-                "execution_log": result["execution_log"]
+                "error": result.get("error"),
+                "failed_step": result.get("failed_step"),
+                "execution_log": result.get("logs")
             }
 
         updated_data = result["data"]
 
-        # 🔥 SAVE STEPS ONLY AFTER SUCCESS
+        # Save steps only after success
         save_or_update_steps(db, workflow_id, worksheet_id, temp_steps)
 
         dp.snapshots = dp.snapshots or {}
-        dp.snapshots[str(len(temp_steps))] = updated_data
+        dp.snapshots[str(len(temp_steps))] = normalize_data(updated_data)
 
         flag_modified(dp, "snapshots")
         db.add(dp)
 
-        worksheet.data = updated_data
+        worksheet.data = normalize_data(updated_data)
         db.commit()
 
         return {
@@ -187,9 +209,13 @@ async def undo_last_step(
     steps = dp.steps[:-1]
 
     snapshots = dp.snapshots or {}
-    original_data = snapshots.get("0", worksheet.data)
 
-    # 🔥 FIX 2: clean snapshots after undo
+    # 🔥 NORMALIZE HERE
+    original_data = normalize_data(
+        snapshots.get("0", worksheet.data)
+    )
+
+    # Clean snapshots after undo
     valid_keys = set(str(i) for i in range(len(steps) + 1))
     dp.snapshots = {
         k: v for k, v in snapshots.items() if k in valid_keys
@@ -200,20 +226,15 @@ async def undo_last_step(
     temporal_workflow_id = f"undo-{uuid.uuid4()}"
 
     handle = await client.start_workflow(
-        DataPrepareWorkflow.run,
-        {
-            "data": original_data,
-            "steps": steps
-        },
+        DataPreparationWorkflow.run,
+        args=[steps, original_data],
+        task_queue="data-prepare-queue",
         id=temporal_workflow_id,
-        task_queue="hello-task-queue",
     )
 
     result = await handle.result()
 
-    # ===============================
-    # Step 5.4: Save execution logs (UNDO)
-    # ===============================
+    # Save execution logs
     from datetime import datetime
     from sqlalchemy.orm.attributes import flag_modified
 
@@ -222,7 +243,7 @@ async def undo_last_step(
     dp.execution_logs.append({
         "run_id": temporal_workflow_id,
         "timestamp": datetime.utcnow().isoformat(),
-        "execution_log": result.get("execution_log", []),
+        "execution_log": result.get("logs", []),
         "status": result.get("status"),
         "type": "undo"
     })
@@ -230,25 +251,25 @@ async def undo_last_step(
     flag_modified(dp, "execution_logs")
     db.add(dp)
 
-    if result["status"] == "failed":
+    if result["status"] == "FAILED":
         db.commit()
         return {
-            "error": result["error"],
-            "failed_step": result["failed_step"],
-            "execution_log": result["execution_log"]
+            "error": result.get("error"),
+            "failed_step": result.get("failed_step"),
+            "execution_log": result.get("logs")
         }
 
     updated_data = result["data"]
 
     dp.snapshots = dp.snapshots or {}
-    dp.snapshots[str(len(steps))] = updated_data
+    dp.snapshots[str(len(steps))] = normalize_data(updated_data)
 
     flag_modified(dp, "snapshots")
     db.add(dp)
 
     save_or_update_steps(db, workflow_id, worksheet_id, steps)
 
-    worksheet.data = updated_data
+    worksheet.data = normalize_data(updated_data)
     db.commit()
 
     return {
@@ -256,4 +277,3 @@ async def undo_last_step(
         "rows": updated_data["rows"][:50],
         "steps_count": len(steps)
     }
-

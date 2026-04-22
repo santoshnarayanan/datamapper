@@ -1,4 +1,4 @@
-from models import DataPrepare
+from app.models import DataPrepare
 
 
 def delete_column(data, column_name):

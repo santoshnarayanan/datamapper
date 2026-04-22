@@ -27,7 +27,7 @@ from app.core.exceptions import StepExecutionError
 
 
 @activity.defn
-async def apply_step_activity(step: dict, data: list):
+async def apply_step_activity(step: dict, data: dict):
     try:
         return execute_step(step, data)
 

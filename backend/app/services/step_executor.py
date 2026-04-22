@@ -23,33 +23,13 @@ Because this function is used in:
 Any non-determinism here will break the entire system.
 """
 
+from typing import Dict
 from app.core.error_classifier import classify_error
 from app.core.exceptions import StepExecutionError
 from app.core.errors import ErrorType
 
 
-def execute_step(step: dict, data: list) -> list:
-    """
-       Executes a single transformation step.
-
-       Parameters:
-       -----------
-       step → transformation instruction
-       data → current dataset state
-
-       Returns:
-       --------
-       Updated dataset
-
-       Raises:
-       -------
-       StepExecutionError (ALWAYS wrapped)
-
-       IMPORTANT:
-       ----------
-       - No mutation of input data
-       - All failures must be classified
-       """
+def execute_step(step: dict, data: dict) -> dict:
 
     try:
         operation = step.get("operation")
@@ -57,31 +37,33 @@ def execute_step(step: dict, data: list) -> list:
         if operation == "delete_column":
             col = step["column"]
 
-            # Validate column existence BEFORE execution
-            # This prevents silent failures and ensures deterministic replay
-
-            # 🔥 ADD THIS CHECK
-            if col not in data[0]:
+            if col not in data["columns"]:
                 raise KeyError(f"Column '{col}' not found")
 
-            return [
-                {k: v for k, v in row.items() if k != col}
-                for row in data
-            ]
+            return {
+                "columns": [c for c in data["columns"] if c != col],
+                "rows": [
+                    {k: v for k, v in row.items() if k != col}
+                    for row in data["rows"]
+                ]
+            }
 
         elif operation == "remove_rows":
             index_list = step["rows"]
-            return [
-                row for idx, row in enumerate(data)
-                if idx not in index_list
-            ]
+
+            return {
+                "columns": data["columns"],
+                "rows": [
+                    row for idx, row in enumerate(data["rows"])
+                    if idx not in index_list
+                ]
+            }
 
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
     except Exception as e:
         error_type = classify_error(e)
-
         retryable = error_type == ErrorType.TRANSIENT
 
         raise StepExecutionError(

@@ -2,13 +2,9 @@ import asyncio
 from temporalio.client import Client
 from temporalio.worker import Worker
 
-from temporal_worker.workflows import HelloWorkflow, DataPrepareWorkflow
-from temporal_worker.activities import (
-    say_hello,
-    delete_column,
-    make_header,
-    remove_rows,
-)
+# ✅ NEW imports (Phase 6 system)
+from app.temporal.workflows import DataPreparationWorkflow
+from app.temporal.activities import apply_step_activity
 
 
 # 🔥 Retry connection to Temporal
@@ -26,17 +22,16 @@ async def connect_temporal():
 
 
 async def main():
-    # ✅ Use retry connection instead of direct connect
     client = await connect_temporal()
 
     worker = Worker(
         client,
-        task_queue="hello-task-queue",
-        workflows=[HelloWorkflow, DataPrepareWorkflow],
-        activities=[say_hello, delete_column, make_header, remove_rows],
+        task_queue="data-prepare-queue",   # ✅ IMPORTANT
+        workflows=[DataPreparationWorkflow],
+        activities=[apply_step_activity],
     )
 
-    print("🚀 Worker started...")
+    print("🚀 Worker started (Phase 6 system)...")
     await worker.run()
 
 

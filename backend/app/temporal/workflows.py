@@ -23,26 +23,45 @@ To preserve:
 
 
 from temporalio import workflow
-
 from datetime import timedelta
 from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
-    from temporal.activities import apply_step_activity
+    from app.temporal.activities import apply_step_activity
 
+
+# ===============================
+# 🔥 NORMALIZE DATA (CRITICAL)
+# ===============================
+def normalize_data(data):
+    """
+    Ensures data is always:
+    { columns: [...], rows: [...] }
+    """
+    if isinstance(data, list):
+        return {
+            "columns": list(data[0].keys()) if data else [],
+            "rows": data
+        }
+    return data
 
 
 @workflow.defn
 class DataPreparationWorkflow:
 
     @workflow.run
-    async def run(self, steps: list, data: list):
+    async def run(self, steps: list, data: dict):
 
-        current_data = data
+        # 🔥 CRITICAL FIX: normalize input
+        current_data = normalize_data(data)
+
         execution_logs = []
 
         for idx, step in enumerate(steps):
             try:
+                # 🔥 CRITICAL FIX: normalize before every step
+                current_data = normalize_data(current_data)
+
                 current_data = await workflow.execute_activity(
                     apply_step_activity,
                     args=[step, current_data],
@@ -53,14 +72,6 @@ class DataPreparationWorkflow:
                         backoff_coefficient=2.0,
                     ),
                 )
-
-                # Execution logs capture step-by-step workflow behavior.
-                # These logs are critical for debugging and replay validation.
-                #
-                # Design Notes:
-                # - Maintains strict execution order
-                # - Stops logging after failure
-                # - Used later for observability (Phase 6.3)
 
                 execution_logs.append({
                     "step": idx,
@@ -74,7 +85,6 @@ class DataPreparationWorkflow:
                     "error": str(e)
                 })
 
-                # Stop execution on failure
                 return {
                     "status": "FAILED",
                     "failed_step": idx,
@@ -85,7 +95,7 @@ class DataPreparationWorkflow:
         return {
             "status": "SUCCESS",
             "data": current_data,
-            "steps": steps,  # ✅ REQUIRED
-            "snapshots": {},  # ✅ REQUIRED (even if empty for now)
+            "steps": steps,
+            "snapshots": {},
             "logs": execution_logs
         }
