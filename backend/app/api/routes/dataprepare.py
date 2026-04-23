@@ -168,7 +168,7 @@ async def apply_transformation(
         flag_modified(dp, "snapshots")
         db.add(dp)
 
-        worksheet.data = normalize_data(updated_data)
+        # worksheet.data = normalize_data(updated_data)
         db.commit()
 
         return {
@@ -269,7 +269,7 @@ async def undo_last_step(
 
     save_or_update_steps(db, workflow_id, worksheet_id, steps)
 
-    worksheet.data = normalize_data(updated_data)
+    # worksheet.data = normalize_data(updated_data)
     db.commit()
 
     return {

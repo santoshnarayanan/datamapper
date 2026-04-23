@@ -11,6 +11,20 @@ from app.services.replay_service import trigger_replay
 
 router = APIRouter()
 
+# ===============================
+# 🔥 NORMALIZE DATA (CRITICAL FIX)
+# ===============================
+def normalize_data(data):
+    """
+    Ensures data is always in:
+    { columns: [...], rows: [...] }
+    """
+    if isinstance(data, list):
+        return {
+            "columns": list(data[0].keys()) if data else [],
+            "rows": data
+        }
+    return data
 
 @router.post("/upload")
 async def upload_excel(
@@ -19,7 +33,7 @@ async def upload_excel(
     db: Session = Depends(get_db)
 ):
     # Step 1: Parse Excel
-    parsed_data = parse_excel(file.file)
+    parsed_data = normalize_data(parse_excel(file.file))
 
     # Step 2: Create new version
     worksheet = create_new_version(
