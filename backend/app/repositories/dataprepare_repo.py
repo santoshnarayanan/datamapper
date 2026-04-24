@@ -1,39 +1,4 @@
-"""
-Execution Logs Handling
 
-Purpose:
---------
-Execution logs track the outcome of each step during workflow execution.
-
-They are used for:
-1. Debugging failures (which step failed and why)
-2. Replay validation (ensuring deterministic behavior)
-3. Observability (future monitoring dashboards)
-
-Structure:
-----------
-Each log entry contains:
-- step index
-- status (SUCCESS / FAILED)
-- error message (if failed)
-- retry attempts (future extension)
-
-IMPORTANT DESIGN RULE:
-----------------------
-- Logs must reflect EXACT execution order
-- Logs must NOT be modified during replay
-- Logs are append-only per execution
-
-Why critical:
--------------
-These logs are the only source of truth for:
-- Failure diagnosis
-- Replay correctness
-"""
-
-
-
-from app.models.dataprepare import DataPrepare
 from sqlalchemy.orm import Session
 from app.models import DataPrepare
 from app.models.worksheet import Worksheet

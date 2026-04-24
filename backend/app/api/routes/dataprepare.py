@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from temporalio.client import Client
@@ -11,6 +12,8 @@ from app.repositories.dataprepare_repo import (
 )
 
 from app.temporal.workflows import DataPreparationWorkflow
+from app.core.error_classifier import classify_error
+
 
 router = APIRouter()
 
@@ -39,6 +42,7 @@ async def run_data_prepare(payload: dict):
 
     client = await Client.connect("localhost:7233")
 
+    start_time = datetime.utcnow()
     handle = await client.start_workflow(
         DataPreparationWorkflow.run,
         args=[payload["steps"], normalize_data(payload["data"])],
@@ -47,6 +51,9 @@ async def run_data_prepare(payload: dict):
     )
 
     result = await handle.result()
+
+    end_time = datetime.utcnow()
+    duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
     return result
 
@@ -122,6 +129,7 @@ async def apply_transformation(
 
         temporal_workflow_id = f"dp-{uuid.uuid4()}"
 
+        start_time = datetime.utcnow()
         handle = await client.start_workflow(
             DataPreparationWorkflow.run,
             args=[remaining_steps, base_data],
@@ -131,19 +139,25 @@ async def apply_transformation(
 
         result = await handle.result()
 
+        end_time = datetime.utcnow()
+        duration_ms = int((end_time - start_time).total_seconds() * 1000)
+
+
         # ===============================
         # Save execution logs
         # ===============================
-        from datetime import datetime
 
         dp.execution_logs = dp.execution_logs or []
 
         dp.execution_logs.append({
             "run_id": temporal_workflow_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "execution_log": result.get("logs", []),
+            "type": "apply",
             "status": result.get("status"),
-            "type": "apply"
+            "error_type": classify_error(result.get("error")) if result.get("status") == "FAILED" else None,
+            "started_at": start_time.isoformat(),
+            "completed_at": end_time.isoformat(),
+            "duration_ms": duration_ms,
+            "steps": result.get("logs", [])
         })
 
         flag_modified(dp, "execution_logs")
@@ -151,8 +165,13 @@ async def apply_transformation(
 
         if result["status"] == "FAILED":
             db.commit()
+
+            error_message = result.get("error")
+            error_type = classify_error(error_message)
+
             return {
-                "error": result.get("error"),
+                "error": error_message,
+                "error_type": error_type,  # ✅ ADD THIS
                 "failed_step": result.get("failed_step"),
                 "execution_log": result.get("logs")
             }
@@ -225,6 +244,7 @@ async def undo_last_step(
 
     temporal_workflow_id = f"undo-{uuid.uuid4()}"
 
+    start_time = datetime.utcnow()
     handle = await client.start_workflow(
         DataPreparationWorkflow.run,
         args=[steps, original_data],
@@ -234,18 +254,25 @@ async def undo_last_step(
 
     result = await handle.result()
 
+    end_time = datetime.utcnow()
+    duration_ms = int((end_time - start_time).total_seconds() * 1000)
+
+
     # Save execution logs
-    from datetime import datetime
     from sqlalchemy.orm.attributes import flag_modified
 
     dp.execution_logs = dp.execution_logs or []
 
+
     dp.execution_logs.append({
         "run_id": temporal_workflow_id,
-        "timestamp": datetime.utcnow().isoformat(),
-        "execution_log": result.get("logs", []),
+        "type": "undo",
         "status": result.get("status"),
-        "type": "undo"
+        "error_type": classify_error(result.get("error")) if result.get("status") == "FAILED" else None,
+        "started_at": start_time.isoformat(),
+        "completed_at": end_time.isoformat(),
+        "duration_ms": duration_ms,
+        "steps": result.get("logs", [])
     })
 
     flag_modified(dp, "execution_logs")
@@ -253,8 +280,13 @@ async def undo_last_step(
 
     if result["status"] == "FAILED":
         db.commit()
+
+        error_message = result.get("error")
+        error_type = classify_error(error_message)
+
         return {
-            "error": result.get("error"),
+            "error": error_message,
+            "error_type": error_type,  # ✅ ADD THIS
             "failed_step": result.get("failed_step"),
             "execution_log": result.get("logs")
         }

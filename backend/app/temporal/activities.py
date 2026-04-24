@@ -33,11 +33,8 @@ async def apply_step_activity(step: dict, data: dict):
 
     except StepExecutionError as e:
 
-        if e.retryable:
-            raise Exception(e.message)
-
-        else:
-            raise ApplicationError(
-                message=e.message,
-                non_retryable=True
-            )
+        # 🔥 ALWAYS use ApplicationError for proper propagation
+        raise ApplicationError(
+            message=e.message,
+            non_retryable=not e.retryable
+        )
