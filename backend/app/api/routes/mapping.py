@@ -5,23 +5,32 @@ from app.core.database import get_db
 from app.models.worksheet import Worksheet
 from app.repositories.mapping_repo import get_mapping, save_or_update_mapping
 from app.repositories.ebatemplate_repo import get_eba_template
+from app.schemas.mapping_schema import MappingRequest
 
 router = APIRouter()
 
 @router.get("/mapping-screen/{workflow_id}")
-def get_mapping_screen(workflow_id: int, db: Session = Depends(get_db)):
+def get_mapping_screen(
+    workflow_id: str,
+    source_ws: str,
+    target_ws: str,
+    db: Session = Depends(get_db)
+):
 
-    # Left grid -> latest worksheet
-    worksheet = db.query(Worksheet).filter(Worksheet.workflow_id == workflow_id).first()
+    # 🔹 Get latest worksheet by name
+    worksheet = db.query(Worksheet).filter(
+        Worksheet.workflow_id == workflow_id,
+        Worksheet.name == source_ws
+    ).order_by(Worksheet.version.desc()).first()
 
     if not worksheet:
         return {"error": "Worksheet not found"}
 
-    # Right grid -> Eba template
+    # 🔹 Get EBA template (filter by name if needed)
     eba_template = get_eba_template(db)
 
-    # Middle grid -> mapping
-    mapping = get_mapping(db, workflow_id)
+    # 🔹 Get mapping
+    mapping = get_mapping(db, workflow_id, source_ws, target_ws)
 
     return {
         "source": worksheet.data,
@@ -32,14 +41,16 @@ def get_mapping_screen(workflow_id: int, db: Session = Depends(get_db)):
 
 @router.post("/mapping")
 def save_mapping(
-    workflow_id: str,
-    mapping_data: list,
+    request: MappingRequest,
     db: Session = Depends(get_db)
 ):
+
     mapping = save_or_update_mapping(
         db,
-        workflow_id,
-        mapping_data
+        request.workflow_id,
+        request.source_worksheet,
+        request.target_worksheet,
+        [m.dict() for m in request.mapping]
     )
 
     return {

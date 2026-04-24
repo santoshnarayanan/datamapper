@@ -21,6 +21,38 @@ To preserve:
 ✔ Data correctness
 """
 
+"""
+Execution Logs Handling
+
+Purpose:
+--------
+Execution logs track the outcome of each step during workflow execution.
+
+They are used for:
+1. Debugging failures (which step failed and why)
+2. Replay validation (ensuring deterministic behavior)
+3. Observability (future monitoring dashboards)
+
+Structure:
+----------
+Each log entry contains:
+- step index
+- status (SUCCESS / FAILED)
+- error message (if failed)
+- retry attempts (future extension)
+
+IMPORTANT DESIGN RULE:
+----------------------
+- Logs must reflect EXACT execution order
+- Logs must NOT be modified during replay
+- Logs are append-only per execution
+
+Why critical:
+-------------
+These logs are the only source of truth for:
+- Failure diagnosis
+- Replay correctness
+"""
 
 from temporalio import workflow
 from datetime import timedelta
@@ -30,38 +62,17 @@ with workflow.unsafe.imports_passed_through():
     from app.temporal.activities import apply_step_activity
 
 
-# ===============================
-# 🔥 NORMALIZE DATA (CRITICAL)
-# ===============================
-def normalize_data(data):
-    """
-    Ensures data is always:
-    { columns: [...], rows: [...] }
-    """
-    if isinstance(data, list):
-        return {
-            "columns": list(data[0].keys()) if data else [],
-            "rows": data
-        }
-    return data
-
-
 @workflow.defn
 class DataPreparationWorkflow:
 
     @workflow.run
     async def run(self, steps: list, data: dict):
-
-        # 🔥 CRITICAL FIX: normalize input
-        current_data = normalize_data(data)
-
+        current_data = data
         execution_logs = []
 
         for idx, step in enumerate(steps):
-            try:
-                # 🔥 CRITICAL FIX: normalize before every step
-                current_data = normalize_data(current_data)
 
+            try:
                 current_data = await workflow.execute_activity(
                     apply_step_activity,
                     args=[step, current_data],
@@ -75,21 +86,39 @@ class DataPreparationWorkflow:
 
                 execution_logs.append({
                     "step": idx,
-                    "status": "SUCCESS"
+                    "status": "SUCCESS",
+                    "attempts": 1  # Temporal retries hidden, we approximate
                 })
 
+
             except Exception as e:
+                error_message = str(e)
+
+                # 🔥 Extract underlying cause safely
+                cause = getattr(e, "cause", None)
+                if cause:
+                    error_message = str(cause)
+
+                # 🔥 Remove extra quotes cleanly
+                if error_message.startswith('"') and error_message.endswith('"'):
+                    error_message = error_message[1:-1]
+
                 execution_logs.append({
+
                     "step": idx,
                     "status": "FAILED",
-                    "error": str(e)
+                    "error": error_message,
+                    "attempts": 3
+
                 })
 
                 return {
+
                     "status": "FAILED",
                     "failed_step": idx,
-                    "error": str(e),
+                    "error": error_message,
                     "logs": execution_logs
+
                 }
 
         return {

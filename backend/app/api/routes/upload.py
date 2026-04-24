@@ -26,6 +26,7 @@ def normalize_data(data):
         }
     return data
 
+# TODO improve Upload to handle multiple worksheets
 @router.post("/upload")
 async def upload_excel(
     file: UploadFile = File(...),
@@ -58,7 +59,7 @@ async def upload_excel(
             steps=steps,
             data=parsed_data
         )
-
+    # TODO UI is limited to 50 rows
     # Step 5: Response
     return {
         "worksheet_id": str(worksheet.id),

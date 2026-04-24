@@ -31,7 +31,7 @@ async def main():
         activities=[apply_step_activity],
     )
 
-    print("🚀 Worker started (Phase 6 system)...")
+    print("🚀 Worker started (Phase 7 system)...")
     await worker.run()
 
 

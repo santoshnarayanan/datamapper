@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, TIMESTAMP, ForeignKey
+from sqlalchemy import Column, TIMESTAMP, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -17,6 +17,10 @@ class MappingInfo(Base):
         ForeignKey("workflow.id", ondelete="CASCADE"),
         nullable=False
     )
+
+    # 🔥 NEW FIELDS (IMPORTANT)
+    source_worksheet = Column(String, nullable=False)
+    target_worksheet = Column(String, nullable=False)
 
     mapping = Column(JSONB, nullable=False)
 
