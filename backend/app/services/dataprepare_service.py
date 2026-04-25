@@ -1,5 +1,5 @@
 from app.models import DataPrepare
-
+from uuid import UUID
 
 def delete_column(data, column_name):
     columns = data["columns"]
@@ -97,3 +97,29 @@ def handle_replay_result(db, workflow_id, worksheet_id, result):
             "status": "failed",
             "reason": "Replay failed — previous version preserved"
         }
+
+def get_latest_dataprepare_snapshot(db, workflow_id: str, worksheet_id: str):
+    """
+    Fetch latest dataprepare snapshot for given workflow and worksheet
+    """
+
+    try:
+        workflow_id = UUID(workflow_id)
+    except:
+        return None
+
+    record = db.query(DataPrepare).filter(
+        DataPrepare.workflow_id == workflow_id,
+        DataPrepare.worksheet_id == worksheet_id
+    ).order_by(DataPrepare.updated_at.desc()).first()
+
+    if not record:
+        return None
+
+    snapshots = record.snapshots or {}
+
+    if not snapshots or not isinstance(snapshots, dict):
+        return None
+
+    last_key = max(snapshots.keys(), key=int)
+    return snapshots[last_key]

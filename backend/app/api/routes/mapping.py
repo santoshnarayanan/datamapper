@@ -11,6 +11,7 @@ from app.repositories.mapping_repo import get_mapping
 from app.services.mapping_validation_service import validate_mapping_request
 from app.services.mapping_execution_service import execute_mapping
 from app.services.export_service import generate_excel, generate_csv
+from app.services.dataprepare_service import get_latest_dataprepare_snapshot
 
 router = APIRouter()
 
@@ -35,7 +36,12 @@ def get_mapping_screen(
     if not worksheet:
         return {"error": f"Source worksheet '{source_ws}' not found"}
 
-    source_data = worksheet.data or {}
+    snapshot = get_latest_dataprepare_snapshot(db, str(workflow_id), worksheet.id)
+
+    if snapshot:
+        source_data = snapshot
+    else:
+        source_data = worksheet.data or {}
 
     # =========================================
     # 🔹 TARGET (FIXED: filter by name)
@@ -115,7 +121,16 @@ def save_mapping(
     if not eba_template:
         raise HTTPException(status_code=404, detail="Target worksheet not found")
 
-    source_columns = worksheet.data.get("columns", [])
+    snapshot = get_latest_dataprepare_snapshot(
+        db,
+        str(request.workflow_id),
+        worksheet.id
+    )
+
+    if snapshot:
+        source_columns = snapshot.get("columns", [])
+    else:
+        source_columns = worksheet.data.get("columns", [])
     target_columns = eba_template.structure.get("columns", [])
 
     # =========================================
@@ -164,8 +179,14 @@ def execute_mapping_api(
     if not worksheet:
         return {"error": "Source worksheet not found"}
 
-    source_data = worksheet.data or {}
-    source_rows = source_data.get("rows", [])
+    # 🔥 NEW: Use DataPrepare snapshot
+    snapshot = get_latest_dataprepare_snapshot(db, str(workflow_id), worksheet.id)
+
+    if snapshot:
+        source_rows = snapshot.get("rows", [])
+    else:
+        source_data = worksheet.data or {}
+        source_rows = source_data.get("rows", [])
 
     # =========================================
     # 🔹 MAPPING
@@ -210,7 +231,12 @@ def export_mapping(
     if not worksheet:
         return {"error": "Source worksheet not found"}
 
-    source_rows = worksheet.data.get("rows", [])
+    snapshot = get_latest_dataprepare_snapshot(db, str(workflow_id), worksheet.id)
+
+    if snapshot:
+        source_rows = snapshot.get("rows", [])
+    else:
+        source_rows = worksheet.data.get("rows", [])
 
     # =========================================
     # 🔹 MAPPING
