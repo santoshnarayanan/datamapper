@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from starlette.responses import StreamingResponse
 
 from app.core.database import get_db
 from app.models.worksheet import Worksheet
@@ -9,6 +10,7 @@ from app.models import EbaTemplate
 from app.repositories.mapping_repo import get_mapping
 from app.services.mapping_validation_service import validate_mapping_request
 from app.services.mapping_execution_service import execute_mapping
+from app.services.export_service import generate_excel, generate_csv
 
 router = APIRouter()
 
@@ -187,3 +189,62 @@ def execute_mapping_api(
         "data": result,
         "count": len(result)
     }
+
+@router.get("/mapping-export/{workflow_id}")
+def export_mapping(
+    workflow_id: str,
+    source_ws: str,
+    target_ws: str,
+    format: str = "excel",  # excel or csv
+    db: Session = Depends(get_db)
+):
+
+    # =========================================
+    # 🔹 SOURCE
+    # =========================================
+    worksheet = db.query(Worksheet).filter(
+        Worksheet.workflow_id == workflow_id,
+        Worksheet.name == source_ws
+    ).order_by(Worksheet.version.desc()).first()
+
+    if not worksheet:
+        return {"error": "Source worksheet not found"}
+
+    source_rows = worksheet.data.get("rows", [])
+
+    # =========================================
+    # 🔹 MAPPING
+    # =========================================
+    mapping_record = get_mapping(db, workflow_id, source_ws, target_ws)
+
+    if not mapping_record:
+        return {"error": "No mapping found"}
+
+    mapping = mapping_record.mapping
+
+    # =========================================
+    # 🔹 EXECUTE
+    # =========================================
+    result = execute_mapping(source_rows, mapping)
+
+    # =========================================
+    # 🔥 EXPORT
+    # =========================================
+    if format == "excel":
+        file = generate_excel(result)
+        filename = "mapping_output.xlsx"
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    elif format == "csv":
+        file = generate_csv(result)
+        filename = "mapping_output.csv"
+        media_type = "text/csv"
+
+    else:
+        return {"error": "Invalid format. Use 'excel' or 'csv'"}
+
+    return StreamingResponse(
+        file,
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
