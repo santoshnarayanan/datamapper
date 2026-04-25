@@ -8,6 +8,7 @@ from app.schemas.mapping_schema import MappingRequest
 from app.models import EbaTemplate
 from app.repositories.mapping_repo import get_mapping
 from app.services.mapping_validation_service import validate_mapping_request
+from app.services.mapping_execution_service import execute_mapping
 
 router = APIRouter()
 
@@ -140,4 +141,49 @@ def save_mapping(
     return {
         "status": "success",
         "mapping": mapping.mapping
+    }
+
+@router.get("/mapping-execute/{workflow_id}")
+def execute_mapping_api(
+    workflow_id: str,
+    source_ws: str,
+    target_ws: str,
+    db: Session = Depends(get_db)
+):
+
+    # =========================================
+    # 🔹 SOURCE
+    # =========================================
+    worksheet = db.query(Worksheet).filter(
+        Worksheet.workflow_id == workflow_id,
+        Worksheet.name == source_ws
+    ).order_by(Worksheet.version.desc()).first()
+
+    if not worksheet:
+        return {"error": "Source worksheet not found"}
+
+    source_data = worksheet.data or {}
+    source_rows = source_data.get("rows", [])
+
+    # =========================================
+    # 🔹 MAPPING
+    # =========================================
+    mapping_record = get_mapping(db, workflow_id, source_ws, target_ws)
+
+    if not mapping_record:
+        return {
+            "data": [],
+            "message": "No mapping found"
+        }
+
+    mapping = mapping_record.mapping
+
+    # =========================================
+    # 🔥 EXECUTION
+    # =========================================
+    result = execute_mapping(source_rows, mapping)
+
+    return {
+        "data": result,
+        "count": len(result)
     }
