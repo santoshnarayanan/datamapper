@@ -1,19 +1,13 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.worksheet import Worksheet
-from app.repositories.mapping_repo import get_mapping, save_or_update_mapping
-from app.repositories.ebatemplate_repo import get_eba_template
+from app.repositories.mapping_repo import  save_or_update_mapping
 from app.schemas.mapping_schema import MappingRequest
 from app.models import EbaTemplate
 from app.repositories.mapping_repo import get_mapping
-from app.services.mapping_screen_service import (
-    get_latest_worksheet,
-    get_all_source_worksheets,
-    get_all_target_templates,
-    get_target_template
-)
+from app.services.mapping_validation_service import validate_mapping_request
 
 router = APIRouter()
 
@@ -100,6 +94,41 @@ def save_mapping(
     db: Session = Depends(get_db)
 ):
 
+    # =========================================
+    # 🔹 FETCH SOURCE + TARGET FOR VALIDATION
+    # =========================================
+    worksheet = db.query(Worksheet).filter(
+        Worksheet.workflow_id == request.workflow_id,
+        Worksheet.name == request.source_worksheet
+    ).order_by(Worksheet.version.desc()).first()
+
+    if not worksheet:
+        raise HTTPException(status_code=404, detail="Source worksheet not found")
+
+    eba_template = db.query(EbaTemplate).filter(
+        EbaTemplate.name == request.target_worksheet
+    ).first()
+
+    if not eba_template:
+        raise HTTPException(status_code=404, detail="Target worksheet not found")
+
+    source_columns = worksheet.data.get("columns", [])
+    target_columns = eba_template.structure.get("columns", [])
+
+    # =========================================
+    # 🔥 VALIDATION STEP
+    # =========================================
+    validate_mapping_request(
+        [m.dict() for m in request.mapping],
+        source_columns,
+        target_columns,
+        request.source_worksheet,
+        request.target_worksheet
+    )
+
+    # =========================================
+    # 🔹 SAVE
+    # =========================================
     mapping = save_or_update_mapping(
         db,
         request.workflow_id,
