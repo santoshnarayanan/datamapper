@@ -274,3 +274,56 @@ def export_mapping(
         media_type=media_type,
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+@router.get("/mapping-suggestions/{workflow_id}")
+def get_mapping_suggestions(
+    workflow_id: str,
+    source_ws: str,
+    target_ws: str,
+    db: Session = Depends(get_db)
+):
+
+    # =========================================
+    # 🔹 SOURCE
+    # =========================================
+    worksheet = db.query(Worksheet).filter(
+        Worksheet.workflow_id == workflow_id,
+        Worksheet.name == source_ws
+    ).order_by(Worksheet.version.desc()).first()
+
+    if not worksheet:
+        return {"error": "Source worksheet not found"}
+
+    snapshot = get_latest_dataprepare_snapshot(
+        db,
+        str(workflow_id),
+        worksheet.id
+    )
+
+    if snapshot:
+        source_columns = snapshot.get("columns", [])
+    else:
+        source_columns = worksheet.data.get("columns", [])
+
+    # =========================================
+    # 🔹 TARGET
+    # =========================================
+    eba_template = db.query(EbaTemplate).filter(
+        EbaTemplate.name == target_ws
+    ).first()
+
+    if not eba_template:
+        return {"error": "Target worksheet not found"}
+
+    target_columns = eba_template.structure.get("columns", [])
+
+    # =========================================
+    # 🔥 SUGGESTIONS
+    # =========================================
+    from app.services.mapping_suggestion_service import suggest_mappings
+
+    suggestions = suggest_mappings(source_columns, target_columns)
+
+    return {
+        "suggestions": suggestions
+    }
