@@ -2,7 +2,12 @@ import difflib
 
 
 def normalize(text: str):
-    return text.lower().replace("_", "").replace(" ", "")
+    return (
+        text.lower()
+        .replace("_", "")
+        .replace(" ", "")
+        .replace("id", "identifier")
+    )
 
 
 def suggest_mappings(source_columns, target_columns):

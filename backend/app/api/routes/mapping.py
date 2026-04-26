@@ -327,3 +327,89 @@ def get_mapping_suggestions(
     return {
         "suggestions": suggestions
     }
+
+@router.post("/mapping-auto/{workflow_id}")
+def auto_mapping(
+    workflow_id: str,
+    source_ws: str = Query(...),
+    target_ws: str = Query(...),
+    db: Session = Depends(get_db)
+):
+
+    # =========================================
+    # 🔹 SOURCE
+    # =========================================
+    worksheet = db.query(Worksheet).filter(
+        Worksheet.workflow_id == workflow_id,
+        Worksheet.name == source_ws
+    ).order_by(Worksheet.version.desc()).first()
+
+    if not worksheet:
+        return {"error": "Source worksheet not found"}
+
+    snapshot = get_latest_dataprepare_snapshot(
+        db,
+        str(workflow_id),
+        worksheet.id
+    )
+
+    if snapshot:
+        source_columns = snapshot.get("columns", [])
+    else:
+        source_columns = (worksheet.data or {}).get("columns", [])
+
+    # =========================================
+    # 🔹 TARGET
+    # =========================================
+    eba_template = db.query(EbaTemplate).filter(
+        EbaTemplate.name == target_ws
+    ).first()
+
+    if not eba_template:
+        return {"error": "Target worksheet not found"}
+
+    target_columns = eba_template.structure.get("columns", [])
+
+    # =========================================
+    # 🔥 AGENT EXECUTION
+    # =========================================
+    from app.services.mapping_agent_service import run_mapping_agent
+
+    generated_mapping = run_mapping_agent(
+        source_columns,
+        target_columns,
+        source_ws,
+        target_ws
+    )
+
+    # =========================================
+    # 🔹 VALIDATION
+    # =========================================
+    validate_mapping_request(
+        generated_mapping,
+        source_columns,
+        target_columns,
+        source_ws,
+        target_ws
+    )
+
+    # =========================================
+    # 🔹 SAVE (IMPORTANT FIX)
+    # =========================================
+    saved_mapping = save_or_update_mapping(
+        db,
+        workflow_id,
+        source_ws,
+        target_ws,
+        generated_mapping
+    )
+
+    # =========================================
+    # 🔹 OBSERVABILITY
+    # =========================================
+    print("Agent Mapping Generated:", generated_mapping)
+
+    return {
+        "status": "success",
+        "mapping": saved_mapping.mapping
+    }
