@@ -122,20 +122,44 @@ def save_mapping(
     if not eba_template:
         raise HTTPException(status_code=404, detail="Target worksheet not found")
 
+    # =========================================
+    # 🔹 GET COLUMNS (SAFE ACCESS)
+    # =========================================
     snapshot = get_latest_dataprepare_snapshot(
         db,
         str(request.workflow_id),
         worksheet.id
     )
 
+    original_columns = (worksheet.data or {}).get("columns", [])
+
     if snapshot:
-        source_columns = snapshot.get("columns", [])
+        snapshot_columns = snapshot.get("columns", [])
+        source_columns = list(set(original_columns + snapshot_columns))
     else:
-        source_columns = worksheet.data.get("columns", [])
-    target_columns = eba_template.structure.get("columns", [])
+        source_columns = original_columns
+
+    print("SNAPSHOT:", snapshot)
+    print("SOURCE COLUMNS USED:", source_columns)
+
+    target_columns = (eba_template.structure or {}).get("columns", [])
 
     # =========================================
-    # 🔥 VALIDATION STEP
+    # 🔥 NEW: PRE-VALIDATION (SCHEMA LEVEL SAFETY)
+    # =========================================
+    seen_targets = set()
+    for m in request.mapping:
+        target_col = m.target.column
+
+        if target_col in seen_targets:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Duplicate mapping for target column: {target_col}"
+            )
+        seen_targets.add(target_col)
+
+    # =========================================
+    # 🔥 EXISTING VALIDATION (BUSINESS LOGIC)
     # =========================================
     validate_mapping_request(
         [m.dict() for m in request.mapping],
@@ -156,9 +180,16 @@ def save_mapping(
         [m.dict() for m in request.mapping]
     )
 
+    # =========================================
+    # 🔥 RESPONSE (SLIGHTLY HARDENED)
+    # =========================================
     return {
         "status": "success",
-        "mapping": mapping.mapping
+        "data": {
+            "mapping": mapping.mapping,
+            "count": len(mapping.mapping)
+        },
+        "error": None
     }
 
 @router.get("/mapping-execute/{workflow_id}")
@@ -285,58 +316,13 @@ def get_mapping_suggestions(
 ):
 
     # =========================================
-    # 🔹 SOURCE
+    # 🔹 INPUT VALIDATION
     # =========================================
-    worksheet = db.query(Worksheet).filter(
-        Worksheet.workflow_id == workflow_id,
-        Worksheet.name == source_ws
-    ).order_by(Worksheet.version.desc()).first()
-
-    if not worksheet:
-        return {"error": "Source worksheet not found"}
-
-    snapshot = get_latest_dataprepare_snapshot(
-        db,
-        str(workflow_id),
-        worksheet.id
-    )
-
-    if snapshot:
-        source_columns = snapshot.get("columns", [])
-    else:
-        source_columns = worksheet.data.get("columns", [])
-
-    # =========================================
-    # 🔹 TARGET
-    # =========================================
-    eba_template = db.query(EbaTemplate).filter(
-        EbaTemplate.name == target_ws
-    ).first()
-
-    if not eba_template:
-        return {"error": "Target worksheet not found"}
-
-    target_columns = eba_template.structure.get("columns", [])
-
-    # =========================================
-    # 🔥 SUGGESTIONS
-    # =========================================
-    from app.services.mapping_suggestion_service import suggest_mappings
-
-    suggestions = suggest_mappings(source_columns, target_columns)
-
-    return {
-        "suggestions": suggestions
-    }
-
-# Persist mapping history in Pinecone to improve future matching accuracy
-@router.post("/mapping-auto/{workflow_id}")
-def auto_mapping(
-    workflow_id: str,
-    source_ws: str = Query(...),
-    target_ws: str = Query(...),
-    db: Session = Depends(get_db)
-):
+    if not source_ws.strip() or not target_ws.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Source and target worksheet names are required"
+        )
 
     # =========================================
     # 🔹 SOURCE
@@ -347,7 +333,7 @@ def auto_mapping(
     ).order_by(Worksheet.version.desc()).first()
 
     if not worksheet:
-        return {"error": "Source worksheet not found"}
+        raise HTTPException(status_code=404, detail="Source worksheet not found")
 
     snapshot = get_latest_dataprepare_snapshot(
         db,
@@ -360,6 +346,12 @@ def auto_mapping(
     else:
         source_columns = (worksheet.data or {}).get("columns", [])
 
+    if not source_columns:
+        raise HTTPException(
+            status_code=400,
+            detail="No source columns available"
+        )
+
     # =========================================
     # 🔹 TARGET
     # =========================================
@@ -368,35 +360,165 @@ def auto_mapping(
     ).first()
 
     if not eba_template:
-        return {"error": "Target worksheet not found"}
+        raise HTTPException(status_code=404, detail="Target worksheet not found")
 
-    target_columns = eba_template.structure.get("columns", [])
+    target_columns = (eba_template.structure or {}).get("columns", [])
+
+    if not target_columns:
+        raise HTTPException(
+            status_code=400,
+            detail="No target columns available"
+        )
 
     # =========================================
-    # 🔥 AGENT EXECUTION
+    # 🔥 SUGGESTIONS (SAFE EXECUTION)
     # =========================================
+    try:
+        from app.services.mapping_suggestion_service import suggest_mappings
 
-    # below code is commnented for Step 7.7A (rule based only)
-    # from app.services.mapping_agent_service import run_mapping_agent
-    #
-    # generated_mapping = run_mapping_agent(
-    #     source_columns,
-    #     target_columns,
-    #     source_ws,
-    #     target_ws
-    # )
+        suggestions = suggest_mappings(source_columns, target_columns)
 
-    from app.services.mapping_agent_service import run_hybrid_mapping_agent
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Suggestion engine failed: {str(e)}"
+        )
 
-    generated_mapping = run_hybrid_mapping_agent(
-        source_columns,
-        target_columns,
-        source_ws,
-        target_ws
+    # =========================================
+    # 🔥 VALIDATE OUTPUT STRUCTURE
+    # =========================================
+    if not isinstance(suggestions, list):
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid response from suggestion engine"
+        )
+
+    # Optional: ensure each item has required fields
+    for s in suggestions:
+        if not isinstance(s, dict):
+            raise HTTPException(
+                status_code=500,
+                detail="Invalid suggestion format"
+            )
+
+        if "source" not in s or "target" not in s:
+            raise HTTPException(
+                status_code=500,
+                detail="Malformed suggestion entry"
+            )
+
+    # =========================================
+    # 🔹 RESPONSE
+    # =========================================
+    return {
+        "status": "success",
+        "data": {
+            "suggestions": suggestions,
+            "count": len(suggestions)
+        },
+        "error": None
+    }
+
+# Persist mapping history in Pinecone to improve future matching accuracy
+@router.post("/mapping-auto/{workflow_id}")
+def auto_mapping(
+    workflow_id: str,
+    source_ws: str = Query(...),
+    target_ws: str = Query(...),
+    db: Session = Depends(get_db)
+):
+
+    # =========================================
+    # 🔹 BASIC INPUT VALIDATION
+    # =========================================
+    if not source_ws.strip() or not target_ws.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Source and target worksheet names are required"
+        )
+
+    # =========================================
+    # 🔹 SOURCE
+    # =========================================
+    worksheet = db.query(Worksheet).filter(
+        Worksheet.workflow_id == workflow_id,
+        Worksheet.name == source_ws
+    ).order_by(Worksheet.version.desc()).first()
+
+    if not worksheet:
+        raise HTTPException(status_code=404, detail="Source worksheet not found")
+
+    snapshot = get_latest_dataprepare_snapshot(
+        db,
+        str(workflow_id),
+        worksheet.id
     )
 
+    if snapshot:
+        source_columns = snapshot.get("columns", [])
+    else:
+        source_columns = (worksheet.data or {}).get("columns", [])
+
+    if not source_columns:
+        raise HTTPException(
+            status_code=400,
+            detail="No source columns available for mapping"
+        )
+
     # =========================================
-    # 🔹 VALIDATION
+    # 🔹 TARGET
+    # =========================================
+    eba_template = db.query(EbaTemplate).filter(
+        EbaTemplate.name == target_ws
+    ).first()
+
+    if not eba_template:
+        raise HTTPException(status_code=404, detail="Target worksheet not found")
+
+    target_columns = (eba_template.structure or {}).get("columns", [])
+
+    if not target_columns:
+        raise HTTPException(
+            status_code=400,
+            detail="No target columns available for mapping"
+        )
+
+    # =========================================
+    # 🔥 AGENT EXECUTION (SAFE)
+    # =========================================
+    try:
+        from app.services.mapping_agent_service import run_hybrid_mapping_agent
+
+        generated_mapping = run_hybrid_mapping_agent(
+            source_columns,
+            target_columns,
+            source_ws,
+            target_ws
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Mapping agent failed: {str(e)}"
+        )
+
+    # =========================================
+    # 🔥 VALIDATE AGENT OUTPUT STRUCTURE
+    # =========================================
+    if not isinstance(generated_mapping, list):
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid mapping response from agent"
+        )
+
+    if not generated_mapping:
+        raise HTTPException(
+            status_code=400,
+            detail="Agent returned empty mapping"
+        )
+
+    # =========================================
+    # 🔹 VALIDATION (EXISTING)
     # =========================================
     validate_mapping_request(
         generated_mapping,
@@ -407,7 +529,7 @@ def auto_mapping(
     )
 
     # =========================================
-    # 🔹 SAVE (IMPORTANT FIX)
+    # 🔹 SAVE
     # =========================================
     saved_mapping = save_or_update_mapping(
         db,
@@ -417,17 +539,25 @@ def auto_mapping(
         generated_mapping
     )
 
-    # Store history after save
-    store_mapping_history(saved_mapping.mapping)
+    # =========================================
+    # 🔹 STORE HISTORY (SAFE)
+    # =========================================
+    try:
+        store_mapping_history(saved_mapping.mapping)
+    except Exception as e:
+        # 🔥 DO NOT FAIL API (important design)
+        print("Pinecone storage failed:", str(e))
 
     # =========================================
-    # 🔹 OBSERVABILITY
+    # 🔹 RESPONSE
     # =========================================
-    print("Agent Mapping Generated:", generated_mapping)
-
     return {
         "status": "success",
-        "mapping": saved_mapping.mapping
+        "data": {
+            "mapping": saved_mapping.mapping,
+            "count": len(saved_mapping.mapping)
+        },
+        "error": None
     }
 
 # Debug endpoint to inspect Pinecone vector matches

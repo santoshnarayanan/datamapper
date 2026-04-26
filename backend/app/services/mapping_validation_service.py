@@ -14,6 +14,14 @@ def validate_mapping_request(
             detail="Mapping list cannot be empty"
         )
 
+    # 🔥 NORMALIZATION FUNCTION (NEW)
+    def normalize(val):
+        return val.strip().lower()
+
+    # 🔥 PRE-COMPUTE NORMALIZED LISTS (NEW)
+    normalized_source_columns = [normalize(c) for c in source_columns]
+    normalized_target_columns = [normalize(c) for c in target_columns]
+
     seen_sources = set()
     seen_targets = set()
 
@@ -47,15 +55,18 @@ def validate_mapping_request(
             )
 
         # =========================
-        # 🔹 Column validation
+        # 🔥 Column validation (FIXED)
         # =========================
-        if src["column"] not in source_columns:
+        src_col_normalized = normalize(src["column"])
+        tgt_col_normalized = normalize(tgt["column"])
+
+        if src_col_normalized not in normalized_source_columns:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid source column: {src['column']}"
             )
 
-        if tgt["column"] not in target_columns:
+        if tgt_col_normalized not in normalized_target_columns:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid target column: {tgt['column']}"
@@ -64,8 +75,8 @@ def validate_mapping_request(
         # =========================
         # 🔹 Duplicate validation
         # =========================
-        src_key = (src["worksheet"], src["column"])
-        tgt_key = tgt["column"]
+        src_key = (src["worksheet"], src_col_normalized)
+        tgt_key = tgt_col_normalized
 
         if src_key in seen_sources:
             raise HTTPException(
