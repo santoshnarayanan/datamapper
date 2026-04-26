@@ -2,7 +2,7 @@ import uuid
 from app.services.embedding_service import get_embedding
 from app.services.pinecone_service import upsert_vectors, query_vector
 
-
+# Store target columns as embeddings for semantic matching
 def store_target_columns(target_columns):
     vectors = []
 
@@ -18,7 +18,7 @@ def store_target_columns(target_columns):
 
     upsert_vectors(vectors)
 
-
+# Store mapping history to enable learning from previous mappings
 def store_mapping_history(mapping_list):
     vectors = []
 
@@ -37,6 +37,8 @@ def store_mapping_history(mapping_list):
 
     upsert_vectors(vectors)
 
+# Perform semantic search using embedding similarity
+# Falls back when rule-based confidence is low
 def semantic_search(source_column):
     embedding = get_embedding(source_column)
 

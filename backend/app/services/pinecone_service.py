@@ -6,6 +6,8 @@ pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index(host=os.getenv("PINECONE_HOST"))
 
 
+# Upsert vectors into Pinecone (handles both insert and update)
+# Vectors include embeddings + metadata for semantic search
 def upsert_vectors(vectors):
     """
     vectors = [
@@ -18,7 +20,8 @@ def upsert_vectors(vectors):
     """
     index.upsert(vectors=vectors)
 
-
+# Query Pinecone for top_k most similar vectors
+# Returns similarity score + metadata (computed at query time)
 def query_vector(vector, top_k=1):
     result = index.query(
         vector=vector,

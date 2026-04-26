@@ -31,6 +31,9 @@ def run_mapping_agent(source_columns, target_columns, source_ws, target_ws):
 
     return mapping
 
+# Hybrid mapping logic:
+# 1. Try rule-based match (fast, deterministic)
+# 2. If confidence is low → fallback to Pinecone semantic search
 def run_hybrid_mapping_agent(
     source_columns,
     target_columns,

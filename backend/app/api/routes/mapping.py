@@ -329,6 +329,7 @@ def get_mapping_suggestions(
         "suggestions": suggestions
     }
 
+# Persist mapping history in Pinecone to improve future matching accuracy
 @router.post("/mapping-auto/{workflow_id}")
 def auto_mapping(
     workflow_id: str,
@@ -429,6 +430,8 @@ def auto_mapping(
         "mapping": saved_mapping.mapping
     }
 
+# Debug endpoint to inspect Pinecone vector matches
+# Useful for validating semantic similarity and stored metadata
 @router.get("/debug-pinecone")
 def debug_pinecone_api(query: str):
     from app.services.embedding_service import get_embedding
