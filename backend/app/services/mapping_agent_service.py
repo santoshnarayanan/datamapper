@@ -55,12 +55,18 @@ def run_hybrid_mapping_agent(
 
     for src in source_columns:
 
+        confidence = 0.0   # ✅ RESET per column
+        target_col = None  # ✅ ensure defined
+
         match = next((s for s in suggestions if s["source"] == src), None)
 
         # 🟢 Rule-based high confidence
         if match and match["confidence"] >= 0.6:
             print(f"RULE MATCH: {src} → {match['target']} ({match['confidence']})")
+
             target_col = match["target"]
+            confidence = round(match["confidence"], 2)  # ✅ set confidence
+
         else:
             # 🔥 Get candidates
             candidates = semantic_search_candidates(src)
@@ -68,17 +74,23 @@ def run_hybrid_mapping_agent(
             if candidates:
                 print("CANDIDATES:", candidates)
 
-                # 🔥 NEW: get knowledge
+                # ✅ best similarity score
+                best_candidate = max(candidates, key=lambda x: x["score"])
+                confidence = round(best_candidate["score"], 2)
+
+                # 🔥 Knowledge (RAG)
                 knowledge = get_domain_knowledge(src)
                 print("KNOWLEDGE:", knowledge)
 
-                # 🔥 FIX: pass knowledge to LLM
+                # 🔥 LLM decision
                 target_col = choose_best_mapping(src, candidates, knowledge)
-
                 print("LLM SELECTED:", target_col)
+
             else:
                 target_col = None
+                confidence = 0.0  # explicit fallback
 
+        # ✅ Final mapping
         if target_col:
             mapping.append({
                 "source": {
@@ -89,6 +101,7 @@ def run_hybrid_mapping_agent(
                     "column": target_col,
                     "worksheet": target_ws
                 },
+                "confidence": confidence,   # ✅ always correct now
                 "status": "MAPPED"
             })
 
