@@ -12,6 +12,7 @@ from app.services.mapping_validation_service import validate_mapping_request
 from app.services.mapping_execution_service import execute_mapping
 from app.services.export_service import generate_excel, generate_csv
 from app.services.dataprepare_service import get_latest_dataprepare_snapshot
+from app.services.vector_mapping_service import store_mapping_history
 
 router = APIRouter()
 
@@ -373,9 +374,20 @@ def auto_mapping(
     # =========================================
     # 🔥 AGENT EXECUTION
     # =========================================
-    from app.services.mapping_agent_service import run_mapping_agent
 
-    generated_mapping = run_mapping_agent(
+    # below code is commnented for Step 7.7A (rule based only)
+    # from app.services.mapping_agent_service import run_mapping_agent
+    #
+    # generated_mapping = run_mapping_agent(
+    #     source_columns,
+    #     target_columns,
+    #     source_ws,
+    #     target_ws
+    # )
+
+    from app.services.mapping_agent_service import run_hybrid_mapping_agent
+
+    generated_mapping = run_hybrid_mapping_agent(
         source_columns,
         target_columns,
         source_ws,
@@ -404,6 +416,9 @@ def auto_mapping(
         generated_mapping
     )
 
+    # Store history after save
+    store_mapping_history(saved_mapping.mapping)
+
     # =========================================
     # 🔹 OBSERVABILITY
     # =========================================
@@ -413,3 +428,19 @@ def auto_mapping(
         "status": "success",
         "mapping": saved_mapping.mapping
     }
+
+@router.get("/debug-pinecone")
+def debug_pinecone_api(query: str):
+    from app.services.embedding_service import get_embedding
+    from app.services.pinecone_service import query_vector
+
+    vector = get_embedding(query)
+    matches = query_vector(vector, top_k=5)
+
+    return [
+        {
+            "score": m.score,
+            "metadata": m.metadata
+        }
+        for m in matches
+    ]
