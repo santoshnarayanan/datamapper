@@ -22,7 +22,7 @@ def upsert_vectors(vectors):
 
 # Query Pinecone for top_k most similar vectors
 # Returns similarity score + metadata (computed at query time)
-def query_vector(vector, top_k=1):
+def query_vector(vector, top_k=3):
     result = index.query(
         vector=vector,
         top_k=top_k,

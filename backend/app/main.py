@@ -1,10 +1,8 @@
 from fastapi import FastAPI
 from app.api.routes import upload, workflow, dataprepare, mapping
-from dotenv import load_dotenv
-import os
 
-load_dotenv()
 app = FastAPI()
+
 
 app.include_router(upload.router)
 app.include_router(workflow.router)

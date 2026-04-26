@@ -1,8 +1,9 @@
 from app.services.mapping_suggestion_service import suggest_mappings
 from app.services.vector_mapping_service import (
-    semantic_search,
-    store_target_columns
+    store_target_columns, semantic_search_candidates
 )
+from app.services.llm_service import choose_best_mapping
+from app.services.vector_mapping_service import get_domain_knowledge
 
 def run_mapping_agent(source_columns, target_columns, source_ws, target_ws):
 
@@ -31,6 +32,7 @@ def run_mapping_agent(source_columns, target_columns, source_ws, target_ws):
 
     return mapping
 
+
 # Hybrid mapping logic:
 # 1. Try rule-based match (fast, deterministic)
 # 2. If confidence is low → fallback to Pinecone semantic search
@@ -56,14 +58,26 @@ def run_hybrid_mapping_agent(
         match = next((s for s in suggestions if s["source"] == src), None)
 
         # 🟢 Rule-based high confidence
-        if match and match["confidence"] >= 0.5:
+        if match and match["confidence"] >= 0.6:
             print(f"RULE MATCH: {src} → {match['target']} ({match['confidence']})")
             target_col = match["target"]
-
         else:
-            print(f"AI MATCH (Pinecone): {src}")
-            # 🔥 Pinecone semantic fallback
-            target_col = semantic_search(src)
+            # 🔥 Get candidates
+            candidates = semantic_search_candidates(src)
+
+            if candidates:
+                print("CANDIDATES:", candidates)
+
+                # 🔥 NEW: get knowledge
+                knowledge = get_domain_knowledge(src)
+                print("KNOWLEDGE:", knowledge)
+
+                # 🔥 FIX: pass knowledge to LLM
+                target_col = choose_best_mapping(src, candidates, knowledge)
+
+                print("LLM SELECTED:", target_col)
+            else:
+                target_col = None
 
         if target_col:
             mapping.append({
