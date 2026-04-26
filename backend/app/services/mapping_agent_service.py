@@ -5,13 +5,12 @@ from app.services.vector_mapping_service import (
 from app.services.llm_service import choose_best_mapping
 from app.services.vector_mapping_service import get_domain_knowledge
 
+from app.core.logger import logger
+import uuid
+
 def run_mapping_agent(source_columns, target_columns, source_ws, target_ws):
 
     from app.services.mapping_suggestion_service import suggest_mappings
-
-    print("inside run_mapping_agent")
-    print("SOURCE:", source_columns)
-    print("TARGET:", target_columns)
 
     suggestions = suggest_mappings(source_columns, target_columns)
 
@@ -42,55 +41,85 @@ def run_hybrid_mapping_agent(
     source_ws,
     target_ws
 ):
-    print("inside run_hybrid_mapping_agent")
-    print("SOURCE:", source_columns)
-    print("TARGET:", target_columns)
+    request_id = str(uuid.uuid4())
 
-    # 🔥 Store target columns in Pinecone
+    logger.info({
+        "event": "agent_start",
+        "source_columns": source_columns,
+        "target_columns": target_columns,
+        "request_id": request_id
+    })
+
     store_target_columns(target_columns)
-
     suggestions = suggest_mappings(source_columns, target_columns)
 
     mapping = []
 
     for src in source_columns:
 
-        confidence = 0.0   # ✅ RESET per column
-        target_col = None  # ✅ ensure defined
+        confidence = 0.0
+        target_col = None
+        method = "NONE"
 
         match = next((s for s in suggestions if s["source"] == src), None)
 
-        # 🟢 Rule-based high confidence
+        # 🟢 RULE
         if match and match["confidence"] >= 0.6:
-            print(f"RULE MATCH: {src} → {match['target']} ({match['confidence']})")
-
             target_col = match["target"]
-            confidence = round(match["confidence"], 2)  # ✅ set confidence
+            confidence = round(match["confidence"], 2)
+            method = "RULE"
+
+            logger.info({
+                "event": "rule_match",
+                "source": src,
+                "target": target_col,
+                "confidence": confidence,
+                "method": method,
+                "request_id": request_id
+            })
 
         else:
-            # 🔥 Get candidates
             candidates = semantic_search_candidates(src)
 
             if candidates:
-                print("CANDIDATES:", candidates)
+                logger.info({
+                    "event": "candidates_found",
+                    "source": src,
+                    "candidates": candidates,
+                    "request_id": request_id
+                })
 
-                # ✅ best similarity score
                 best_candidate = max(candidates, key=lambda x: x["score"])
                 confidence = round(best_candidate["score"], 2)
 
-                # 🔥 Knowledge (RAG)
                 knowledge = get_domain_knowledge(src)
-                print("KNOWLEDGE:", knowledge)
 
-                # 🔥 LLM decision
+                logger.info({
+                    "event": "rag_knowledge",
+                    "source": src,
+                    "knowledge": knowledge,
+                    "request_id": request_id
+                })
+
                 target_col = choose_best_mapping(src, candidates, knowledge)
-                print("LLM SELECTED:", target_col)
+                method = "LLM_RAG"
+
+                logger.info({
+                    "event": "llm_decision",
+                    "source": src,
+                    "selected_target": target_col,
+                    "confidence": confidence,
+                    "method": method,
+                    "request_id": request_id
+                })
 
             else:
-                target_col = None
-                confidence = 0.0  # explicit fallback
+                logger.info({
+                    "event": "no_candidates",
+                    "source": src,
+                    "request_id": request_id
+                })
 
-        # ✅ Final mapping
         if target_col:
             mapping.append({
                 "source": {
@@ -101,8 +130,24 @@ def run_hybrid_mapping_agent(
                     "column": target_col,
                     "worksheet": target_ws
                 },
-                "confidence": confidence,   # ✅ always correct now
+                "confidence": confidence,
+                "method": method,
                 "status": "MAPPED"
             })
+
+            logger.info({
+                "event": "mapping_finalized",
+                "source": src,
+                "target": target_col,
+                "confidence": confidence,
+                "method": method,
+                "request_id": request_id
+            })
+
+    logger.info({
+        "event": "agent_complete",
+        "total_mappings": len(mapping),
+        "request_id": request_id
+    })
 
     return mapping
