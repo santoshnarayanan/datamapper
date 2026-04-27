@@ -1,0 +1,3 @@
+Acct No means Account Number
+Cust Ref means Customer Identification
+Loan No means Loan Identification
