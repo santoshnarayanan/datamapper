@@ -17,6 +17,14 @@ from app.core.error_classifier import classify_error
 
 router = APIRouter()
 
+# ===============================
+# 🔥 HELPER FUNCTION FOR PAGINATION
+# ===============================
+
+def paginate_rows(rows, page, page_size):
+    start = (page - 1) * page_size
+    end = start + page_size
+    return rows[start:end]
 
 # ===============================
 # 🔥 NORMALIZE DATA (CRITICAL FIX)
@@ -67,6 +75,8 @@ async def apply_transformation(
     worksheet_id: str,
     action: str,
     payload: dict,
+    page: int = 1,
+    page_size: int = 50,
     db: Session = Depends(get_db)
 ):
     worksheet = db.query(Worksheet).filter(
@@ -190,9 +200,18 @@ async def apply_transformation(
         # worksheet.data = normalize_data(updated_data)
         db.commit()
 
+        rows = updated_data.get("rows", [])
+        total = len(rows)
+
         return {
-            "columns": updated_data["columns"],
-            "rows": updated_data["rows"][:50],
+            "columns": updated_data.get("columns", []),
+            "rows": paginate_rows(rows, page, page_size),
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": (total + page_size - 1) // page_size
+            },
             "steps_count": len(temp_steps)
         }
 
@@ -211,6 +230,8 @@ async def apply_transformation(
 async def undo_last_step(
     workflow_id: str,
     worksheet_id: str,
+    page: int = 1,
+    page_size: int = 50,
     db: Session = Depends(get_db)
 ):
     worksheet = db.query(Worksheet).filter(
@@ -304,8 +325,17 @@ async def undo_last_step(
     # worksheet.data = normalize_data(updated_data)
     db.commit()
 
+    rows = updated_data.get("rows", [])
+    total = len(rows)
+
     return {
-        "columns": updated_data["columns"],
-        "rows": updated_data["rows"][:50],
+        "columns": updated_data.get("columns", []),
+        "rows": paginate_rows(rows, page, page_size),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": (total + page_size - 1) // page_size
+        },
         "steps_count": len(steps)
     }

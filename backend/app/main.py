@@ -8,7 +8,7 @@ app = FastAPI()
 
 # register exception handler
 app.add_exception_handler(HTTPException, http_exception_handler)
-app.add_exception_handler((Exception,generic_exception_handler)
+app.add_exception_handler(Exception,generic_exception_handler)
 
 # register routes
 app.include_router(upload.router)
