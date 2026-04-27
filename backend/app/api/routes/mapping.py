@@ -13,7 +13,8 @@ from app.services.mapping_execution_service import execute_mapping
 from app.services.export_service import generate_excel, generate_csv
 from app.services.dataprepare_service import get_latest_dataprepare_snapshot
 from app.services.vector_mapping_service import store_mapping_history
-
+from datetime import datetime
+import uuid
 router = APIRouter()
 
 from fastapi import Query
@@ -189,7 +190,11 @@ def save_mapping(
             "mapping": mapping.mapping,
             "count": len(mapping.mapping)
         },
-        "error": None
+        "error": None,
+        "meta": {
+            "request_id": str(uuid.uuid4()),
+            "timestamp": datetime.utcnow().isoformat()
+        }
     }
 
 @router.get("/mapping-execute/{workflow_id}")
@@ -209,7 +214,7 @@ def execute_mapping_api(
     ).order_by(Worksheet.version.desc()).first()
 
     if not worksheet:
-        return {"error": "Source worksheet not found"}
+        raise HTTPException(status_code=404, detail="Source worksheet not found")
 
     # 🔥 NEW: Use DataPrepare snapshot
     snapshot = get_latest_dataprepare_snapshot(db, str(workflow_id), worksheet.id)
@@ -236,11 +241,29 @@ def execute_mapping_api(
     # =========================================
     # 🔥 EXECUTION
     # =========================================
-    result = execute_mapping(source_rows, mapping)
+    try:
+        result = execute_mapping(source_rows, mapping)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    r # =========================================
+    # 🔹 TYPE SAFETY
+    # =========================================
+    if not isinstance(result, list):
+        raise HTTPException(status_code=500, detail="Invalid execution result format")
 
     return {
-        "data": result,
-        "count": len(result)
+        "status": "success",
+        "data": {
+            "mapping": mapping,
+            "result": result,
+            "count": len(result)
+        },
+        "error": None,
+        "meta": {
+            "request_id": str(uuid.uuid4()),
+            "timestamp": datetime.utcnow().isoformat()
+        }
     }
 
 @router.get("/mapping-export/{workflow_id}")
@@ -261,7 +284,7 @@ def export_mapping(
     ).order_by(Worksheet.version.desc()).first()
 
     if not worksheet:
-        return {"error": "Source worksheet not found"}
+        raise HTTPException(status_code=404, detail="Source worksheet not found")
 
     snapshot = get_latest_dataprepare_snapshot(db, str(workflow_id), worksheet.id)
 
@@ -276,14 +299,17 @@ def export_mapping(
     mapping_record = get_mapping(db, workflow_id, source_ws, target_ws)
 
     if not mapping_record:
-        return {"error": "No mapping found"}
+        raise HTTPException(status_code=404, detail="No mapping found")
 
     mapping = mapping_record.mapping
 
     # =========================================
     # 🔹 EXECUTE
     # =========================================
-    result = execute_mapping(source_rows, mapping)
+    try:
+        result = execute_mapping(source_rows, mapping)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     # =========================================
     # 🔥 EXPORT
@@ -299,7 +325,10 @@ def export_mapping(
         media_type = "text/csv"
 
     else:
-        return {"error": "Invalid format. Use 'excel' or 'csv'"}
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid format. Use 'excel' or 'csv'"
+        )
 
     return StreamingResponse(
         file,
@@ -416,7 +445,11 @@ def get_mapping_suggestions(
             "suggestions": suggestions,
             "count": len(suggestions)
         },
-        "error": None
+        "error": None,
+        "meta": {
+            "request_id": str(uuid.uuid4()),
+            "timestamp": datetime.utcnow().isoformat()
+        }
     }
 
 # Persist mapping history in Pinecone to improve future matching accuracy
@@ -557,7 +590,11 @@ def auto_mapping(
             "mapping": saved_mapping.mapping,
             "count": len(saved_mapping.mapping)
         },
-        "error": None
+        "error": None,
+        "meta": {
+            "request_id": str(uuid.uuid4()),
+            "timestamp": datetime.utcnow().isoformat()
+        }
     }
 
 # Debug endpoint to inspect Pinecone vector matches
