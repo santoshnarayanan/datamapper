@@ -13,9 +13,13 @@ from app.repositories.dataprepare_repo import (
 
 from app.temporal.workflows import DataPreparationWorkflow
 from app.core.error_classifier import classify_error
-
+from app.repositories.worksheet_row_repo import (
+    delete_rows_by_worksheet,
+    bulk_insert_rows
+)
 
 router = APIRouter()
+
 
 # ===============================
 # 🔥 HELPER FUNCTION FOR PAGINATION
@@ -25,6 +29,7 @@ def paginate_rows(rows, page, page_size):
     start = (page - 1) * page_size
     end = start + page_size
     return rows[start:end]
+
 
 # ===============================
 # 🔥 NORMALIZE DATA (CRITICAL FIX)
@@ -47,7 +52,6 @@ def normalize_data(data):
 # ===============================
 @router.post("/run-data-prepare")
 async def run_data_prepare(payload: dict):
-
     client = await Client.connect("localhost:7233")
 
     start_time = datetime.utcnow()
@@ -71,13 +75,13 @@ async def run_data_prepare(payload: dict):
 # ===============================
 @router.post("/dataprepare")
 async def apply_transformation(
-    workflow_id: str,
-    worksheet_id: str,
-    action: str,
-    payload: dict,
-    page: int = 1,
-    page_size: int = 50,
-    db: Session = Depends(get_db)
+        workflow_id: str,
+        worksheet_id: str,
+        action: str,
+        payload: dict,
+        page: int = 1,
+        page_size: int = 50,
+        db: Session = Depends(get_db)
 ):
     worksheet = db.query(Worksheet).filter(
         Worksheet.id == worksheet_id
@@ -152,7 +156,6 @@ async def apply_transformation(
         end_time = datetime.utcnow()
         duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
-
         # ===============================
         # Save execution logs
         # ===============================
@@ -188,7 +191,24 @@ async def apply_transformation(
 
         updated_data = result["data"]
 
+        # ===============================
+        # 🔥 NEW: SYNC ROW TABLE (PHASE 9.3)
+        # ===============================
+
+
+        # Clear old rows
+        delete_rows_by_worksheet(db, worksheet.id)
+
+        # Insert updated rows
+        bulk_insert_rows(
+            db,
+            worksheet.id,
+            updated_data.get("rows", [])
+        )
+
+        # ===============================
         # Save steps only after success
+        # ===============================
         save_or_update_steps(db, workflow_id, worksheet_id, temp_steps)
 
         dp.snapshots = dp.snapshots or {}
@@ -228,11 +248,11 @@ async def apply_transformation(
 # ===============================
 @router.post("/dataprepare/undo")
 async def undo_last_step(
-    workflow_id: str,
-    worksheet_id: str,
-    page: int = 1,
-    page_size: int = 50,
-    db: Session = Depends(get_db)
+        workflow_id: str,
+        worksheet_id: str,
+        page: int = 1,
+        page_size: int = 50,
+        db: Session = Depends(get_db)
 ):
     worksheet = db.query(Worksheet).filter(
         Worksheet.id == worksheet_id
@@ -278,12 +298,10 @@ async def undo_last_step(
     end_time = datetime.utcnow()
     duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
-
     # Save execution logs
     from sqlalchemy.orm.attributes import flag_modified
 
     dp.execution_logs = dp.execution_logs or []
-
 
     dp.execution_logs.append({
         "run_id": temporal_workflow_id,
@@ -313,6 +331,24 @@ async def undo_last_step(
         }
 
     updated_data = result["data"]
+
+    # ===============================
+    # 🔥 NEW: SYNC ROW TABLE (PHASE 9.3)
+    # ===============================
+    from app.repositories.worksheet_row_repo import (
+        delete_rows_by_worksheet,
+        bulk_insert_rows
+    )
+
+    # Clear old rows
+    delete_rows_by_worksheet(db, worksheet.id)
+
+    # Insert updated rows
+    bulk_insert_rows(
+        db,
+        worksheet.id,
+        updated_data.get("rows", [])
+    )
 
     dp.snapshots = dp.snapshots or {}
     dp.snapshots[str(len(steps))] = normalize_data(updated_data)

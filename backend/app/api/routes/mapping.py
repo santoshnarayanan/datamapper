@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
 from app.core.database import get_db
 from app.models.worksheet import Worksheet
-from app.repositories.mapping_repo import  save_or_update_mapping
+from app.repositories.mapping_repo import save_or_update_mapping
 from app.schemas.mapping_schema import MappingRequest
 from app.models import EbaTemplate
 from app.repositories.mapping_repo import get_mapping
@@ -13,20 +13,24 @@ from app.services.mapping_execution_service import execute_mapping
 from app.services.export_service import generate_excel, generate_csv
 from app.services.dataprepare_service import get_latest_dataprepare_snapshot
 from app.services.vector_mapping_service import store_mapping_history
+from app.repositories.worksheet_row_repo import get_total_rows, get_paginated_rows
 from datetime import datetime
 import uuid
+
 router = APIRouter()
 
 from fastapi import Query
 
+
 @router.get("/mapping-screen/{workflow_id}")
 def get_mapping_screen(
-    workflow_id: str,
-    source_ws: str = Query(...),
-    target_ws: str = Query(...),
-    db: Session = Depends(get_db)
+        workflow_id: str,
+        source_ws: str = Query(...),
+        target_ws: str = Query(...),
+        page: int = Query(1),
+        page_size: int = Query(50),
+        db: Session = Depends(get_db)
 ):
-
     # =========================================
     # 🔹 SOURCE (Latest Worksheet)
     # =========================================
@@ -77,13 +81,39 @@ def get_mapping_screen(
     ]
 
     # =========================================
+    # 🔹 ROW FETCHING (NEW LOGIC)
+    # =========================================
+    if snapshot:
+        # Dataprepare exists → fallback to JSON (for now)
+        rows = source_data.get("rows", [])
+        total = len(rows)
+
+        # Apply pagination at API level
+        start = (page - 1) * page_size
+        end = start + page_size
+        rows = rows[start:end]
+
+    else:
+        print("USING DB PAGINATION")
+        # No dataprepare → use DB pagination
+        rows_db = get_paginated_rows(db, worksheet.id, page, page_size)
+        rows = [r.row_data for r in rows_db]
+        total = get_total_rows(db, worksheet.id)
+
+    # =========================================
     # 🔹 FINAL RESPONSE (STRUCTURED)
     # =========================================
     return {
         "source": {
             "worksheet": source_ws,
             "columns": source_data.get("columns", []),
-            "rows": source_data.get("rows", [])
+            "rows": rows,
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": (total + page_size - 1) // page_size
+            }
         },
         "target": {
             "worksheet": target_ws,
@@ -101,10 +131,9 @@ def get_mapping_screen(
 
 @router.post("/mapping")
 def save_mapping(
-    request: MappingRequest,
-    db: Session = Depends(get_db)
+        request: MappingRequest,
+        db: Session = Depends(get_db)
 ):
-
     # =========================================
     # 🔹 FETCH SOURCE + TARGET FOR VALIDATION
     # =========================================
@@ -197,14 +226,14 @@ def save_mapping(
         }
     }
 
+
 @router.get("/mapping-execute/{workflow_id}")
 def execute_mapping_api(
-    workflow_id: str,
-    source_ws: str,
-    target_ws: str,
-    db: Session = Depends(get_db)
+        workflow_id: str,
+        source_ws: str,
+        target_ws: str,
+        db: Session = Depends(get_db)
 ):
-
     # =========================================
     # 🔹 SOURCE
     # =========================================
@@ -246,7 +275,7 @@ def execute_mapping_api(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    r # =========================================
+    r  # =========================================
     # 🔹 TYPE SAFETY
     # =========================================
     if not isinstance(result, list):
@@ -266,15 +295,15 @@ def execute_mapping_api(
         }
     }
 
+
 @router.get("/mapping-export/{workflow_id}")
 def export_mapping(
-    workflow_id: str,
-    source_ws: str,
-    target_ws: str,
-    format: str = "excel",  # excel or csv
-    db: Session = Depends(get_db)
+        workflow_id: str,
+        source_ws: str,
+        target_ws: str,
+        format: str = "excel",  # excel or csv
+        db: Session = Depends(get_db)
 ):
-
     # =========================================
     # 🔹 SOURCE
     # =========================================
@@ -336,14 +365,14 @@ def export_mapping(
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
+
 @router.get("/mapping-suggestions/{workflow_id}")
 def get_mapping_suggestions(
-    workflow_id: str,
-    source_ws: str,
-    target_ws: str,
-    db: Session = Depends(get_db)
+        workflow_id: str,
+        source_ws: str,
+        target_ws: str,
+        db: Session = Depends(get_db)
 ):
-
     # =========================================
     # 🔹 INPUT VALIDATION
     # =========================================
@@ -452,15 +481,15 @@ def get_mapping_suggestions(
         }
     }
 
+
 # Persist mapping history in Pinecone to improve future matching accuracy
 @router.post("/mapping-auto/{workflow_id}")
 def auto_mapping(
-    workflow_id: str,
-    source_ws: str = Query(...),
-    target_ws: str = Query(...),
-    db: Session = Depends(get_db)
+        workflow_id: str,
+        source_ws: str = Query(...),
+        target_ws: str = Query(...),
+        db: Session = Depends(get_db)
 ):
-
     # =========================================
     # 🔹 BASIC INPUT VALIDATION
     # =========================================
@@ -596,6 +625,7 @@ def auto_mapping(
             "timestamp": datetime.utcnow().isoformat()
         }
     }
+
 
 # Debug endpoint to inspect Pinecone vector matches
 # Useful for validating semantic similarity and stored metadata

@@ -8,6 +8,7 @@ from app.services.excel_service import parse_excel
 from app.repositories.worksheet_repo import create_new_version
 from app.repositories.dataprepare_repo import get_previous_steps
 from app.services.replay_service import trigger_replay
+from app.repositories.worksheet_row_repo import bulk_insert_rows
 
 router = APIRouter()
 
@@ -36,6 +37,7 @@ async def upload_excel(
     # Step 1: Parse Excel
     parsed_data = normalize_data(parse_excel(file.file))
 
+
     # Step 2: Create new version
     worksheet = create_new_version(
         db=db,
@@ -43,6 +45,8 @@ async def upload_excel(
         name=file.filename,
         data=parsed_data
     )
+
+    bulk_insert_rows(db, worksheet.id, parsed_data["rows"])
 
     # Step 3: Fetch previous steps
     steps = get_previous_steps(
