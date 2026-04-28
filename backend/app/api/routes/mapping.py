@@ -16,14 +16,14 @@ from app.services.vector_mapping_service import store_mapping_history
 from app.repositories.worksheet_row_repo import get_total_rows, get_paginated_rows
 from datetime import datetime
 import uuid
-
+import asyncio
 router = APIRouter()
 
 from fastapi import Query
 
 
 @router.get("/mapping-screen/{workflow_id}")
-def get_mapping_screen(
+async def get_mapping_screen(
         workflow_id: str,
         source_ws: str = Query(...),
         target_ws: str = Query(...),
@@ -128,7 +128,6 @@ def get_mapping_screen(
             "target_worksheet": target_ws
         }
     }
-
 
 @router.post("/mapping")
 def save_mapping(
