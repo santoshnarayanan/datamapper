@@ -53,7 +53,8 @@ def get_mapping_screen(
     # 🔹 TARGET (FIXED: filter by name)
     # =========================================
     eba_template = db.query(EbaTemplate).filter(
-        EbaTemplate.name == target_ws
+        EbaTemplate.name == target_ws,
+        EbaTemplate.workflow_id == workflow_id
     ).first()
 
     if not eba_template:
@@ -77,7 +78,7 @@ def get_mapping_screen(
     ]))
 
     target_ws_list = [
-        t.name for t in db.query(EbaTemplate).all()
+        t.name for t in db.query(EbaTemplate).filter(EbaTemplate.workflow_id == workflow_id).all()
     ]
 
     # =========================================
@@ -146,7 +147,8 @@ def save_mapping(
         raise HTTPException(status_code=404, detail="Source worksheet not found")
 
     eba_template = db.query(EbaTemplate).filter(
-        EbaTemplate.name == request.target_worksheet
+        EbaTemplate.name == request.target_worksheet,
+        EbaTemplate.workflow_id == request.workflow_id
     ).first()
 
     if not eba_template:
@@ -414,7 +416,8 @@ def get_mapping_suggestions(
     # 🔹 TARGET
     # =========================================
     eba_template = db.query(EbaTemplate).filter(
-        EbaTemplate.name == target_ws
+        EbaTemplate.name == target_ws,
+        EbaTemplate.workflow_id == workflow_id
     ).first()
 
     if not eba_template:
@@ -531,7 +534,8 @@ def auto_mapping(
     # 🔹 TARGET
     # =========================================
     eba_template = db.query(EbaTemplate).filter(
-        EbaTemplate.name == target_ws
+        EbaTemplate.name == target_ws,
+        EbaTemplate.workflow_id == workflow_id
     ).first()
 
     if not eba_template:

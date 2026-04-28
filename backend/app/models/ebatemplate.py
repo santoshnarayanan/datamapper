@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String
+from sqlalchemy import Column, String, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.models.base import Base
@@ -11,3 +11,9 @@ class EbaTemplate(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     structure = Column(JSONB, nullable=False)
+
+    workflow_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workflow.id", ondelete="CASCADE"),
+        nullable=False
+    )
