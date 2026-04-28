@@ -14,9 +14,12 @@ from app.services.export_service import generate_excel, generate_csv
 from app.services.dataprepare_service import get_latest_dataprepare_snapshot
 from app.services.vector_mapping_service import store_mapping_history
 from app.repositories.worksheet_row_repo import get_total_rows, get_paginated_rows
+from app.services.mapping_agent_service import run_hybrid_mapping_agent
+from app.repositories.mapping_feedback_repo import save_feedback
+
 from datetime import datetime
 import uuid
-import asyncio
+
 router = APIRouter()
 
 from fastapi import Query
@@ -552,13 +555,15 @@ def auto_mapping(
     # 🔥 AGENT EXECUTION (SAFE)
     # =========================================
     try:
-        from app.services.mapping_agent_service import run_hybrid_mapping_agent
+
 
         generated_mapping = run_hybrid_mapping_agent(
             source_columns,
             target_columns,
             source_ws,
-            target_ws
+            target_ws,
+            db,
+            workflow_id=workflow_id
         )
 
     except Exception as e:
@@ -647,3 +652,17 @@ def debug_pinecone_api(query: str):
         }
         for m in matches
     ]
+
+@router.post("/mapping-feedback")
+def capture_feedback(
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    return save_feedback(
+        db=db,
+        workflow_id=payload["workflow_id"],
+        source_field=payload["source_field"],
+        suggested_field=payload.get("suggested_field"),
+        final_field=payload["final_field"],
+        action=payload["action"]
+    )

@@ -4,6 +4,7 @@ from app.services.vector_mapping_service import (
 )
 from app.services.llm_service import choose_best_mapping
 from app.services.vector_mapping_service import get_domain_knowledge
+from app.repositories.mapping_feedback_repo import get_feedback_mapping
 
 from app.core.logger import logger
 import uuid
@@ -39,7 +40,9 @@ def run_hybrid_mapping_agent(
     source_columns,
     target_columns,
     source_ws,
-    target_ws
+    target_ws,
+    db,  # 🔥 NEW: DB session required for feedback lookup
+    workflow_id  # 🔥 NEW: needed to fetch feedback
 ):
     request_id = str(uuid.uuid4())
 
@@ -55,6 +58,9 @@ def run_hybrid_mapping_agent(
 
     mapping = []
 
+    # 🔥 NEW: import feedback repo
+    from app.repositories.mapping_feedback_repo import get_feedback_mapping
+
     for src in source_columns:
 
         confidence = 0.0
@@ -64,7 +70,7 @@ def run_hybrid_mapping_agent(
         match = next((s for s in suggestions if s["source"] == src), None)
 
         # 🟢 RULE
-        if match and match["confidence"] >= 0.6:
+        if match and match["confidence"] >= 0.85:
             target_col = match["target"]
             confidence = round(match["confidence"], 2)
             method = "RULE"
@@ -78,7 +84,36 @@ def run_hybrid_mapping_agent(
                 "request_id": request_id
             })
 
-        else:
+        # 🔥 NEW: FEEDBACK LAYER (AFTER RULE, BEFORE SEMANTIC)
+        if not target_col:
+            feedback = get_feedback_mapping(db, workflow_id, src)
+
+            # 🔥 NEW: VALIDATE feedback target exists in template
+            if feedback and feedback.final_field in target_columns:
+                target_col = feedback.final_field
+                confidence = 0.99
+                method = "FEEDBACK"
+
+                logger.info({
+                    "event": "feedback_match",
+                    "source": src,
+                    "target": target_col,
+                    "confidence": confidence,
+                    "method": method,
+                    "request_id": request_id
+                })
+
+            # 🔥 NEW: Skip invalid feedback (important fix)
+            elif feedback:
+                logger.info({
+                    "event": "invalid_feedback_skipped",
+                    "source": src,
+                    "feedback_target": feedback.final_field,
+                    "request_id": request_id
+                })
+
+        # 🟡 Existing Semantic + LLM logic (UNCHANGED)
+        if not target_col:
             candidates = semantic_search_candidates(src)
 
             if candidates:
