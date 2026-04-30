@@ -1,11 +1,33 @@
+"""
+VECTOR MAPPING SERVICE (Phase 7.7B + Phase 10 Enhancements)
+
+Responsibilities:
+- Store embeddings for target columns
+- Perform semantic similarity search
+- Store mapping history for learning
+- Inject feedback-driven candidates
+
+Key Concept:
+Semantic retrieval is augmented with feedback to overcome retrieval limitations.
+"""
+
 import uuid
 from app.services.embedding_service import get_embedding
 from app.services.pinecone_service import upsert_vectors, query_vector
+from app.repositories.mapping_feedback_repo import get_feedback_mapping
 import os
 
 
 # Store target columns as embeddings for semantic matching
 def store_target_columns(target_columns):
+    """
+    Store target columns as embeddings in vector DB.
+
+    Used for:
+    - Semantic similarity matching
+    - Candidate retrieval
+    """
+
     vectors = []
 
     for col in target_columns:
@@ -23,6 +45,14 @@ def store_target_columns(target_columns):
 
 # Store mapping history to enable learning from previous mappings
 def store_mapping_history(mapping_list):
+    """
+    Store mapping history in vector DB.
+
+    Purpose:
+    - Improve future semantic retrieval
+    - Enable learning from past mappings
+    """
+
     vectors = []
 
     for m in mapping_list:
@@ -43,13 +73,40 @@ def store_mapping_history(mapping_list):
 
 # Perform semantic search using embedding similarity
 # Falls back when rule-based confidence is low
-def semantic_search_candidates(source_column):
+
+# ----------------------------------------
+# FEEDBACK-AWARE CANDIDATE INJECTION
+# ----------------------------------------
+# Ensures feedback targets are considered even if
+# semantic search does not return them.
+#
+# Behavior:
+# - Inject feedback.final_field into candidates
+# - Assign base score slightly below top match
+#
+# Why:
+# Prevent loss of user intent due to retrieval limitations
+def semantic_search_candidates(source_column, db=None, workflow_id=None):
+    """
+    Perform semantic search using embeddings.
+
+    Enhanced with:
+    - Feedback-based candidate injection
+
+    Why:
+    Pure semantic search may miss business-relevant mappings.
+    Feedback ensures user intent is always considered.
+    """
+
     embedding = get_embedding(source_column)
     matches = query_vector(embedding, top_k=10)
 
     unique_targets = {}
     results = []
 
+    # ----------------------------------------
+    # 🟢 EXISTING LOGIC (UNCHANGED)
+    # ----------------------------------------
     for m in matches:
         metadata = m.metadata
 
@@ -75,6 +132,27 @@ def semantic_search_candidates(source_column):
         if target not in unique_targets or m.score > unique_targets[target]:
             unique_targets[target] = m.score
 
+    # ----------------------------------------
+    # FEEDBACK-AWARE INJECTION
+    # ----------------------------------------
+    if db and workflow_id:
+
+        feedback = get_feedback_mapping(db, workflow_id, source_column)
+
+        if feedback and feedback.final_field:
+            feedback_target = feedback.final_field
+
+            # Inject ONLY if not already present
+            if feedback_target not in unique_targets:
+
+                # Slightly lower than best score
+                base_score = max(unique_targets.values(), default=0.5) - 0.05
+
+                unique_targets[feedback_target] = base_score
+
+    # ----------------------------------------
+    # 🟢 FINAL RESULT BUILD (UNCHANGED)
+    # ----------------------------------------
     for target, score in unique_targets.items():
         results.append({
             "target": target,

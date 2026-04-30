@@ -536,9 +536,12 @@ def auto_mapping(
     # 🔹 TARGET
     # =========================================
     eba_template = db.query(EbaTemplate).filter(
-        EbaTemplate.name == target_ws,
-        EbaTemplate.workflow_id == workflow_id
+        EbaTemplate.name == target_ws.strip(),
+        EbaTemplate.workflow_id == workflow_id.strip()
     ).first()
+
+    print("Target worksheet ID:", target_ws)
+    print("Workflow ID:", workflow_id)
 
     if not eba_template:
         raise HTTPException(status_code=404, detail="Target worksheet not found")
@@ -653,6 +656,25 @@ def debug_pinecone_api(query: str):
         for m in matches
     ]
 
+# ----------------------------------------
+# PHASE 9 — FEEDBACK CAPTURE
+# ----------------------------------------
+# Endpoint: /mapping-feedback
+#
+# Captures user decisions on mapping suggestions.
+#
+# Input:
+# - source_field
+# - suggested_field
+# - final_field
+# - action (ACCEPT / REJECT)
+#
+# Behavior:
+# - Stores feedback for future learning
+# - Does NOT immediately change mapping results
+#
+# Purpose:
+# Build historical feedback dataset for adaptive learning
 @router.post("/mapping-feedback")
 def capture_feedback(
     payload: dict,

@@ -14,16 +14,18 @@ def validate_mapping_request(
             detail="Mapping list cannot be empty"
         )
 
-    # 🔥 NORMALIZATION FUNCTION (NEW)
+    # 🔥 NORMALIZATION FUNCTION
     def normalize(val):
         return val.strip().lower()
 
-    # 🔥 PRE-COMPUTE NORMALIZED LISTS (NEW)
+    # 🔥 PRE-COMPUTE NORMALIZED LISTS
     normalized_source_columns = [normalize(c) for c in source_columns]
     normalized_target_columns = [normalize(c) for c in target_columns]
 
     seen_sources = set()
-    seen_targets = set()
+
+    # 🔥 NEW: Track best mapping per target
+    best_target_map = {}
 
     for m in mapping_list:
 
@@ -55,7 +57,7 @@ def validate_mapping_request(
             )
 
         # =========================
-        # 🔥 Column validation (FIXED)
+        # 🔥 Column validation
         # =========================
         src_col_normalized = normalize(src["column"])
         tgt_col_normalized = normalize(tgt["column"])
@@ -73,10 +75,9 @@ def validate_mapping_request(
             )
 
         # =========================
-        # 🔹 Duplicate validation
+        # 🔹 Duplicate source validation
         # =========================
         src_key = (src["worksheet"], src_col_normalized)
-        tgt_key = tgt_col_normalized
 
         if src_key in seen_sources:
             raise HTTPException(
@@ -84,11 +85,34 @@ def validate_mapping_request(
                 detail=f"Duplicate source mapping: {src['column']}"
             )
 
-        if tgt_key in seen_targets:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Duplicate target mapping: {tgt['column']}"
-            )
-
         seen_sources.add(src_key)
-        seen_targets.add(tgt_key)
+
+        # =========================
+        # 🔥 NEW: Duplicate target resolution (BEST LOGIC)
+        # If multiple sources map to same target:
+        # → Compare confidence scores
+        # → Retain highest confidence mapping
+        # → Replace weaker mapping
+        #
+        # Why:
+        # Avoid conflicts while preserving best mapping quality
+        #
+        # Note:
+        # This replaces earlier strict validation which blocked duplicates
+        # =========================
+        new_conf = m.get("confidence", 0)
+
+        if tgt_col_normalized in best_target_map:
+            existing_mapping = best_target_map[tgt_col_normalized]
+            existing_conf = existing_mapping.get("confidence", 0)
+
+            # 🔥 Replace ONLY if new mapping is stronger
+            if new_conf > existing_conf:
+                best_target_map[tgt_col_normalized] = m
+
+        else:
+            best_target_map[tgt_col_normalized] = m
+
+    # 🔥 IMPORTANT: Update original list with resolved mappings
+    mapping_list.clear()
+    mapping_list.extend(best_target_map.values())
