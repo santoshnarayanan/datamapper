@@ -52,3 +52,34 @@ def get_feedback_stats(db, workflow_id, source_field):
                 stats["rejected"][f.suggested_field] = stats["rejected"].get(f.suggested_field, 0) + 1
 
     return stats
+
+
+# =========================================
+# 🟣 STEP 4 — RECENCY-WEIGHTED FEEDBACK
+# Retrieve full feedback history for:
+# - workflow
+# - source column
+#
+# Used for:
+# - temporal weighting
+# - adaptive scoring
+# - recency-aware reranking
+# =========================================
+def get_feedback_history(db, workflow_id, source_field):
+    """
+    Fetch complete feedback history for a source field.
+
+    Returns:
+    - ACCEPT history
+    - REJECT history
+    - timestamps for recency weighting
+    """
+
+    return (
+        db.query(MappingFeedback)
+        .filter(
+            MappingFeedback.workflow_id == workflow_id,
+            MappingFeedback.source_field == source_field
+        )
+        .all()
+    )

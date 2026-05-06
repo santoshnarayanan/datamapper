@@ -14,8 +14,10 @@ Semantic retrieval is augmented with feedback to overcome retrieval limitations.
 import uuid
 from app.services.embedding_service import get_embedding
 from app.services.pinecone_service import upsert_vectors, query_vector
-from app.repositories.mapping_feedback_repo import get_feedback_mapping
+from app.repositories.mapping_feedback_repo import get_feedback_mapping, get_feedback_history
 import os
+
+from app.services.feedback_weight_service import compute_feedback_score
 
 
 # Store target columns as embeddings for semantic matching
@@ -92,6 +94,7 @@ def semantic_search_candidates(source_column, db=None, workflow_id=None):
 
     Enhanced with:
     - Feedback-based candidate injection
+    - Recency-weighted feedback scoring
 
     Why:
     Pure semantic search may miss business-relevant mappings.
@@ -103,6 +106,12 @@ def semantic_search_candidates(source_column, db=None, workflow_id=None):
 
     unique_targets = {}
     results = []
+
+    # =========================================
+    # 🟣 NEW: FEEDBACK HISTORY CACHE
+    # Used for recency-weighted scoring
+    # =========================================
+    feedback_scores = {}
 
     # ----------------------------------------
     # 🟢 EXISTING LOGIC (UNCHANGED)
@@ -150,13 +159,79 @@ def semantic_search_candidates(source_column, db=None, workflow_id=None):
 
                 unique_targets[feedback_target] = base_score
 
+        # =========================================
+        # 🟣 STEP 4 — RECENCY-WEIGHTED FEEDBACK
+        # Compute weighted feedback scores using:
+        # - ACCEPT / REJECT history
+        # - recency decay
+        # =========================================
+        feedback_history = get_feedback_history(
+            db,
+            workflow_id,
+            source_column
+        )
+
+        # =========================================
+        # 🟣 GROUP FEEDBACK BY TARGET
+        # =========================================
+        grouped_feedback = {}
+
+        for f in feedback_history:
+
+            # =========================================
+            # 🟣 ACCEPT boosts corrected/final target
+            # REJECT penalizes suggested target
+            # =========================================
+            if f.action == "ACCEPT":
+                target = f.final_field
+
+            elif f.action == "REJECT":
+                target = f.suggested_field
+
+            else:
+                continue
+
+            if not target:
+                continue
+
+            if target not in grouped_feedback:
+                grouped_feedback[target] = []
+
+            grouped_feedback[target].append(f)
+
+        # =========================================
+        # 🟣 COMPUTE WEIGHTED FEEDBACK SCORE
+        # =========================================
+        for target, entries in grouped_feedback.items():
+
+            weighted_score = compute_feedback_score(entries)
+            weighted_score = max(-0.3, min(weighted_score, 0.3))
+
+            feedback_scores[target] = weighted_score
+
     # ----------------------------------------
-    # 🟢 FINAL RESULT BUILD (UNCHANGED)
+    # 🟢 FINAL RESULT BUILD (ENHANCED)
     # ----------------------------------------
     for target, score in unique_targets.items():
+
+        # =========================================
+        # 🟣 APPLY RECENCY-WEIGHTED BOOST/PENALTY
+        # =========================================
+        weighted_feedback = feedback_scores.get(target, 0.0)
+
+        adjusted_score = score + weighted_feedback
+
+        # =========================================
+        # 🟣 SAFETY CLAMP
+        # Prevent invalid scoring range
+        # =========================================
+        adjusted_score = max(0.0, min(adjusted_score, 1.0))
+
         results.append({
             "target": target,
-            "score": score
+            "score": adjusted_score,
+            "semantic_score": score,
+            "feedback_score": weighted_feedback
         })
 
     return results
