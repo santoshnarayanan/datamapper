@@ -27,4 +27,6 @@ class MappingInfo(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
+    decision_trace = Column(JSONB, nullable=True)
+
     workflow = relationship("Workflow")

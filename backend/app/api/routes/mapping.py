@@ -16,14 +16,17 @@ from app.services.vector_mapping_service import store_mapping_history
 from app.repositories.worksheet_row_repo import get_total_rows, get_paginated_rows
 from app.services.mapping_agent_service import run_hybrid_mapping_agent
 from app.repositories.mapping_feedback_repo import save_feedback
+from app.services.mapping_service import generate_mapping_decision
+from app.services.embedding_service import get_embedding
+from app.services.pinecone_service import query_vector
+from app.repositories import mapping_repo
 
 from datetime import datetime
 import uuid
 
+
+
 router = APIRouter()
-
-from fastapi import Query
-
 
 @router.get("/mapping-screen/{workflow_id}")
 async def get_mapping_screen(
@@ -642,8 +645,7 @@ def auto_mapping(
 # Useful for validating semantic similarity and stored metadata
 @router.get("/debug-pinecone")
 def debug_pinecone_api(query: str):
-    from app.services.embedding_service import get_embedding
-    from app.services.pinecone_service import query_vector
+
 
     vector = get_embedding(query)
     matches = query_vector(vector, top_k=5)
@@ -688,3 +690,62 @@ def capture_feedback(
         final_field=payload["final_field"],
         action=payload["action"]
     )
+
+
+@router.post("/suggest-mapping")
+def suggest_mapping(
+    request: MappingRequest,
+    db: Session = Depends(get_db)   # ✅ FIXED
+):
+
+    # =========================================
+    # 🔹 GENERATE DECISION (PHASE 11)
+    # =========================================
+    result = generate_mapping_decision(
+        source_field="Customer ID",   # ⚠️ replace with real dynamic input
+        candidates=[
+            {"field": "Customer Identification", "score": 0.82},
+            {"field": "Client ID", "score": 0.75}
+        ],
+        rule_score=0.45,
+        semantic_score=0.78,
+        feedback_score=0.10,
+        accept_count=2,
+        reject_count=0
+    )
+
+    mapping = result["mapping"]
+    decision_trace = result["decision_trace"]
+
+    # =========================================
+    # 🟣 NEW: TRANSFORM AI OUTPUT TO DB FORMAT
+    # Repository expects nested source/target structure
+    # =========================================
+    formatted_mapping = [
+        {
+            "source": {
+                "column": mapping["source"],
+                "worksheet": request.source_worksheet
+            },
+            "target": {
+                "column": mapping["target"],
+                "worksheet": request.target_worksheet
+            },
+            "confidence": mapping["confidence"],
+            "method": mapping["method"]
+        }
+    ]
+
+    # =========================================
+    # 🟣 NEW: STORE DECISION TRACE (PHASE 11)
+    # =========================================
+    mapping_repo.save_or_update_mapping(
+        db=db,
+        workflow_id=request.workflow_id,
+        source_ws=request.source_worksheet,
+        target_ws=request.target_worksheet,
+        new_mapping=formatted_mapping,
+        decision_trace=decision_trace
+    )
+
+    return result

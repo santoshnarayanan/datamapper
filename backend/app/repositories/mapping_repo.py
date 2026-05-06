@@ -64,6 +64,7 @@ Args:
 - source_ws: Source worksheet name
 - target_ws: Target worksheet name
 - new_mapping: List of mapping entries
+- decision_trace: explain trace of audit
 
 Returns:
 - Newly created MappingInfo record
@@ -74,7 +75,8 @@ def save_or_update_mapping(
     workflow_id,
     source_ws,
     target_ws,
-    new_mapping: list
+    new_mapping: list,
+    decision_trace=None  # ✅ NEW: optional decision trace
 ):
     # =========================================
     # 🔥 STEP 0: REMOVE ALL mappings for SOURCE
@@ -144,6 +146,13 @@ def save_or_update_mapping(
         target_worksheet=target_ws,
         mapping=new_mapping
     )
+
+    # =========================================
+    # 🟣 STEP 3.1 — STORE DECISION TRACE
+    # Store explainability trace for audit + debugging (Phase 11)
+    # =========================================
+    if decision_trace:
+        new_record.decision_trace = decision_trace
 
     db.add(new_record)
     db.commit()
