@@ -710,7 +710,7 @@ def suggest_mapping(
         rule_score=0.45,
         semantic_score=0.78,
         feedback_score=0.10,
-        accept_count=2,
+        accept_count=0,
         reject_count=0
     )
 

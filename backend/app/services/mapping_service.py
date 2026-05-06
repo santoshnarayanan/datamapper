@@ -2,6 +2,7 @@
 
 from typing import List, Dict
 from app.services.decision_trace import build_decision_trace
+from app.services.confidence_service import  compute_confidence_score
 
 
 # -----------------------------
@@ -67,11 +68,23 @@ def generate_mapping_decision(
             "decision_trace": None
         }
 
-    # Step 2: Compute confidence
-    confidence = best_candidate["score"]
+    # Step 2: Resolve method
+    method = resolve_method(
+        rule_score,
+        accept_count,
+        reject_count
+    )
 
-    # Step 2.5: Resolve method ONCE
-    method = resolve_method(rule_score, accept_count, reject_count)
+    # =========================================
+    # 🟣 STEP 3 — METHOD-AWARE CONFIDENCE MODEL
+    # Compute confidence based on selected strategy
+    # =========================================
+    confidence = compute_confidence_score(
+        method=method,
+        rule_score=rule_score,
+        semantic_score=semantic_score,
+        feedback_score=feedback_score
+    )
 
     # Step 3: Build decision trace
     decision_trace = build_decision_trace(
@@ -83,6 +96,7 @@ def generate_mapping_decision(
         rule_score=rule_score,
         semantic_score=semantic_score,
         feedback_score=feedback_score,
+
         final_score=confidence,
 
         feedback_accept_count=accept_count,
