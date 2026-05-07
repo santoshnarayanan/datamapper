@@ -20,6 +20,7 @@ from app.services.mapping_service import generate_mapping_decision
 from app.services.embedding_service import get_embedding
 from app.services.pinecone_service import query_vector
 from app.repositories import mapping_repo
+from app.services.stability_service import should_replace_mapping
 
 from datetime import datetime
 import uuid
@@ -695,7 +696,7 @@ def capture_feedback(
 @router.post("/suggest-mapping")
 def suggest_mapping(
     request: MappingRequest,
-    db: Session = Depends(get_db)   # ✅ FIXED
+    db: Session = Depends(get_db)
 ):
 
     # =========================================
@@ -718,6 +719,37 @@ def suggest_mapping(
     decision_trace = result["decision_trace"]
 
     # =========================================
+    # 🟣 STEP 5 — STABILITY LAYER
+    # Prevent unnecessary mapping flip-flops
+    # =========================================
+
+    # Simulated existing confidence
+    # ⚠️ Later this should come from DB/history
+    existing_confidence = 0.50
+
+    new_confidence = mapping["confidence"]
+
+    should_replace = should_replace_mapping(
+        existing_score=existing_confidence,
+        new_score=new_confidence
+    )
+
+    # =========================================
+    # 🟣 BUILD STABILITY TRACE
+    # =========================================
+    stability_trace = {
+        "existing_score": round(existing_confidence, 4),
+        "new_score": round(new_confidence, 4),
+        "threshold": 0.10,
+        "mapping_replaced": should_replace
+    }
+
+    # =========================================
+    # 🟣 ATTACH STABILITY TRACE
+    # =========================================
+    decision_trace["stability_trace"] = stability_trace
+
+    # =========================================
     # 🟣 NEW: TRANSFORM AI OUTPUT TO DB FORMAT
     # Repository expects nested source/target structure
     # =========================================
@@ -737,15 +769,23 @@ def suggest_mapping(
     ]
 
     # =========================================
-    # 🟣 NEW: STORE DECISION TRACE (PHASE 11)
+    # 🟣 STEP 5 — STABILITY ENFORCEMENT
+    # Save mapping only if replacement allowed
     # =========================================
-    mapping_repo.save_or_update_mapping(
-        db=db,
-        workflow_id=request.workflow_id,
-        source_ws=request.source_worksheet,
-        target_ws=request.target_worksheet,
-        new_mapping=formatted_mapping,
-        decision_trace=decision_trace
-    )
+    if should_replace:
 
-    return result
+        mapping_repo.save_or_update_mapping(
+            db=db,
+            workflow_id=request.workflow_id,
+            source_ws=request.source_worksheet,
+            target_ws=request.target_worksheet,
+            new_mapping=formatted_mapping,
+            decision_trace=decision_trace
+        )
+
+    return {
+        "mapping": mapping,
+        "decision_trace": decision_trace,
+        "stability_applied": True,
+        "mapping_saved": should_replace
+    }

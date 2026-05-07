@@ -20,7 +20,13 @@ def build_decision_trace(
     final_score,
     feedback_accept_count,
     feedback_reject_count,
-    candidates
+    candidates,
+
+    # =========================================
+    # 🟣 STEP 5 — STABILITY LAYER
+    # Optional stability metadata
+    # =========================================
+    stability_trace=None
 ):
     return {
         "source_field": source_field,
@@ -46,6 +52,15 @@ def build_decision_trace(
                 "score": round(c["score"], 4)
             } for c in candidates
         ],
+
+        # =========================================
+        # 🟣 STEP 5 — STABILITY TRACE
+        # Helps explain why mapping was:
+        # - replaced
+        # - retained
+        # - blocked from changing
+        # =========================================
+        "stability_trace": stability_trace,
 
         "reason": generate_reason(
             selected_target,
