@@ -21,13 +21,13 @@ from app.services.embedding_service import get_embedding
 from app.services.pinecone_service import query_vector
 from app.repositories import mapping_repo
 from app.services.stability_service import should_replace_mapping
+from app.services.governance_service import evaluate_governance
 
 from datetime import datetime
 import uuid
 
-
-
 router = APIRouter()
+
 
 @router.get("/mapping-screen/{workflow_id}")
 async def get_mapping_screen(
@@ -135,6 +135,7 @@ async def get_mapping_screen(
             "target_worksheet": target_ws
         }
     }
+
 
 @router.post("/mapping")
 def save_mapping(
@@ -563,7 +564,6 @@ def auto_mapping(
     # =========================================
     try:
 
-
         generated_mapping = run_hybrid_mapping_agent(
             source_columns,
             target_columns,
@@ -646,8 +646,6 @@ def auto_mapping(
 # Useful for validating semantic similarity and stored metadata
 @router.get("/debug-pinecone")
 def debug_pinecone_api(query: str):
-
-
     vector = get_embedding(query)
     matches = query_vector(vector, top_k=5)
 
@@ -658,6 +656,7 @@ def debug_pinecone_api(query: str):
         }
         for m in matches
     ]
+
 
 # ----------------------------------------
 # PHASE 9 — FEEDBACK CAPTURE
@@ -680,8 +679,8 @@ def debug_pinecone_api(query: str):
 # Build historical feedback dataset for adaptive learning
 @router.post("/mapping-feedback")
 def capture_feedback(
-    payload: dict,
-    db: Session = Depends(get_db)
+        payload: dict,
+        db: Session = Depends(get_db)
 ):
     return save_feedback(
         db=db,
@@ -695,15 +694,14 @@ def capture_feedback(
 
 @router.post("/suggest-mapping")
 def suggest_mapping(
-    request: MappingRequest,
-    db: Session = Depends(get_db)
+        request: MappingRequest,
+        db: Session = Depends(get_db)
 ):
-
     # =========================================
     # 🔹 GENERATE DECISION (PHASE 11)
     # =========================================
     result = generate_mapping_decision(
-        source_field="Customer ID",   # ⚠️ replace with real dynamic input
+        source_field="Customer ID",  # ⚠️ replace with real dynamic input
         candidates=[
             {"field": "Customer Identification", "score": 0.82},
             {"field": "Client ID", "score": 0.75}
@@ -729,6 +727,17 @@ def suggest_mapping(
 
     new_confidence = mapping["confidence"]
 
+    # =========================================
+    # 🟣 STEP 6 — CONFIDENCE GOVERNANCE
+    # Determine whether mapping is:
+    # - auto-approved
+    # - review-required
+    # - blocked
+    # =========================================
+    governance = evaluate_governance(
+        new_confidence
+    )
+
     should_replace = should_replace_mapping(
         existing_score=existing_confidence,
         new_score=new_confidence
@@ -750,6 +759,11 @@ def suggest_mapping(
     decision_trace["stability_trace"] = stability_trace
 
     # =========================================
+    # 🟣 STEP 6 — GOVERNANCE TRACE
+    # =========================================
+    decision_trace["governance"] = governance
+
+    # =========================================
     # 🟣 NEW: TRANSFORM AI OUTPUT TO DB FORMAT
     # Repository expects nested source/target structure
     # =========================================
@@ -764,7 +778,12 @@ def suggest_mapping(
                 "worksheet": request.target_worksheet
             },
             "confidence": mapping["confidence"],
-            "method": mapping["method"]
+            "method": mapping["method"],
+            # =========================================
+            # 🟣 STEP 6 — GOVERNANCE PERSISTENCE
+            # Persist governance lifecycle state
+            # =========================================
+            "governance_status": governance["status"]
         }
     ]
 
@@ -772,8 +791,15 @@ def suggest_mapping(
     # 🟣 STEP 5 — STABILITY ENFORCEMENT
     # Save mapping only if replacement allowed
     # =========================================
-    if should_replace:
-
+    # 🟣 STEP 6 — GOVERNANCE ENFORCEMENT
+    # Save mapping only if:
+    # - stability allows replacement
+    # - governance allows persistence
+    # =========================================
+    if (
+            should_replace and
+            governance["status"] != "BLOCKED_LOW_CONFIDENCE"
+    ):
         mapping_repo.save_or_update_mapping(
             db=db,
             workflow_id=request.workflow_id,
@@ -787,5 +813,9 @@ def suggest_mapping(
         "mapping": mapping,
         "decision_trace": decision_trace,
         "stability_applied": True,
-        "mapping_saved": should_replace
+        "mapping_saved": (
+                should_replace and
+                governance["status"] != "BLOCKED_LOW_CONFIDENCE"
+        ),
+        "governance": governance
     }
