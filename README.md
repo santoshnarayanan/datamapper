@@ -1,184 +1,488 @@
-# 📊 Excel Transformation & Mapping System
+# 🚀 SchemaFlow-AI — Governed Intelligent Data Mapping Platform
 
-A backend-driven data processing system inspired by Power Query, designed to ingest, transform, and map Excel data to structured banking templates (EBA format).
+## 🧠 Overview
 
----
+SchemaFlow-AI is an enterprise-grade intelligent data mapping and transformation platform designed to automate Excel and schema mapping workflows using adaptive AI orchestration.
 
-## 🚀 Overview
+The platform combines:
 
-This project enables users to:
+- Rule-based mapping
+- Semantic vector search
+- Adaptive feedback learning
+- Deterministic orchestration
+- Explainable AI
+- Governance & guardrails
+- Workflow replay & orchestration
 
-* Upload Excel files
-* Perform step-by-step data transformations
-* Map source data to predefined EBA templates
-* Persist transformation logic for replay and reuse
-
-The system is designed with a **workflow-centric architecture**, where each user session is tracked and processed independently.
-
----
-
-## 🧱 Core Architecture
-
-### 🔑 Workflow-Centric Design
-
-All operations are tied to a unique `workflow_id`, which acts as the central entity connecting:
-
-* Uploaded worksheets
-* Data transformation steps
-* Mapping configurations
+Unlike traditional RAG systems, SchemaFlow-AI evolves AI suggestions into a governed and explainable decision platform suitable for enterprise workflows.
 
 ---
 
-### 🗄️ Data Storage (PostgreSQL)
+# 🎯 Key Objectives
 
-* Excel data stored as **JSONB** (dynamic schema support)
-* Transformation steps stored as ordered operations
-* Mapping configurations stored for reuse
+The platform was designed to solve enterprise challenges around:
 
----
+- Manual spreadsheet mapping
+- Repetitive transformation workflows
+- Inconsistent field mapping
+- Lack of explainability in AI systems
+- Mapping instability and AI hallucinations
+- Workflow replay and operational reliability
 
-### ⚙️ Backend (FastAPI)
+SchemaFlow-AI transforms AI-assisted mapping into:
 
-* REST APIs for workflow creation and file upload
-* Modular architecture:
-
-  * Routes (API layer)
-  * Services (business logic)
-  * Repositories (data access)
-  * Models (ORM)
+# ✅ Governed Adaptive AI Decision Platform
 
 ---
 
-### 📊 Excel Processing
+# 🏗️ Architecture Overview
 
-* Excel files parsed using pandas
-* Data normalized into:
+## Core Architecture Layers
 
-  ```json
-  {
-    "columns": [...],
-    "rows": [...]
-  }
-  ```
-
----
-
-## 🔄 Application Flow
-
-### 1. Home Screen (Upload)
-
-* User uploads Excel file(s)
-* Data is parsed and stored in PostgreSQL (JSONB)
-* Linked to a `workflow_id`
+```text
+Excel Upload
+    ↓
+Data Preparation
+    ↓
+Temporal Workflow Orchestration
+    ↓
+AI Mapping Pipeline
+    ↓
+Feedback Learning Engine
+    ↓
+Governance & Guardrails
+    ↓
+Controlled Persistence
+```
 
 ---
 
-### 2. Data Prepare Screen
+# 🧩 Major Platform Capabilities
 
-* User performs transformations:
+## 📊 Intelligent Data Mapping
 
-  * Delete columns
-  * Remove rows
-  * Set header row
-* Each operation is stored as:
+Supports:
 
-  * Step (action performed)
-  * Snapshot (data state)
-
----
-
-### 3. Data Mapping Screen
-
-Three-grid interface:
-
-| Grid   | Description            |
-| ------ | ---------------------- |
-| Left   | Source worksheet data  |
-| Middle | Mapping between fields |
-| Right  | EBA template structure |
-
-* Supports drag-and-drop mapping
-* Mapping stored as JSON
-* Designed for AI-assisted suggestions (future phase)
+- Rule-based matching
+- Semantic similarity search
+- AI-assisted mapping suggestions
+- Controlled decision selection
+- Historical learning
 
 ---
 
-## 🧩 Tech Stack
+## 🔄 Temporal Workflow Orchestration
 
-### Backend
+Uses Temporal for:
 
-* FastAPI
-* SQLAlchemy
-* PostgreSQL (JSONB)
+- Durable workflows
+- Replayable execution
+- Step retry
+- Fault tolerance
+- Workflow state management
+- Activity orchestration
 
-### Data Processing
+Example workflow capabilities:
 
-* Pandas
-* OpenPyXL
-
-### Frontend (Planned)
-
-* Next.js
-* Redux
-* Material UI
-* Tailwind CSS
-
-### Future Integrations
-
-* Temporal (workflow replay)
-* Pinecone (AI-based mapping suggestions)
-* AWS Cognito (authentication)
+- Upload processing
+- Data transformation replay
+- Snapshot recovery
+- Execution logging
+- Step orchestration
 
 ---
 
-## 🎯 Phase 1 Scope (Current)
+## 🧠 AI Mapping Engine (Phase 7)
 
-* FastAPI project setup
-* PostgreSQL schema design
-* SQLAlchemy models
-* Excel upload & parsing API
-* JSONB-based storage
+The AI mapping engine combines:
+
+### Rule-Based Matching
+
+- Exact matching
+- Normalized matching
+- Similarity thresholds
+
+### Semantic Search
+
+Using:
+
+- OpenAI embeddings
+- Pinecone vector database
+
+Capabilities:
+
+- Semantic similarity
+- Context-aware matching
+- Top-k candidate retrieval
+
+### Controlled AI Decisioning
+
+Instead of allowing unrestricted LLM decisions, the system uses:
+
+- Candidate ranking
+- Confidence scoring
+- Deterministic orchestration
+- Controlled selection
+
+This ensures:
+
+- Predictable mappings
+- Reduced hallucinations
+- Explainable outcomes
 
 ---
 
-## 🔮 Future Roadmap
+# 🔁 Feedback Learning Engine (Phase 9)
 
-* Data transformation engine with replay (Temporal)
-* AI-assisted mapping using vector search (Pinecone)
-* Full frontend integration
-* Export to Excel (EBA format)
+The platform continuously learns from user feedback.
+
+## Features
+
+- ACCEPT / REJECT feedback capture
+- Mapping history persistence
+- Workflow-specific learning
+- Candidate injection
+- Feedback-aware reranking
+
+Example:
+
+```json
+{
+  "source_field": "Customer Name",
+  "suggested_field": "Customer Identification",
+  "final_field": "Full Name",
+  "action": "REJECT"
+}
+```
 
 ---
 
-## 🧠 Design Principles
+# 📈 Adaptive Intelligence Layer (Phase 10)
 
-* Keep PostgreSQL as the **source of truth**
-* Use JSONB for flexibility with dynamic schemas
-* Separate business logic from data access
-* Build extensible architecture for AI and workflow orchestration
+Introduced adaptive AI learning capabilities.
+
+## Capabilities
+
+- Score calibration
+- Strong ACCEPT enforcement
+- Strong REJECT blocking
+- Candidate reranking
+- Controlled feedback overrides
+- Mapping intelligence
+
+### Decision Priority
+
+```text
+1. RULE
+2. STRONG ACCEPT
+3. STRONG REJECT
+4. Adjusted Candidates
+5. Controlled Decision
+```
 
 ---
 
-## ▶️ Running the Project
+# 🛡️ Governance & Guardrails (Phase 11)
+
+Phase 11 transformed the platform into an enterprise-grade governed AI system.
+
+## Explainability Layer
+
+Every AI decision includes:
+
+- Decision trace
+- Confidence score
+- Candidate rankings
+- Feedback contribution
+- Reasoning explanation
+
+Example:
+
+```json
+{
+  "selected_target": "Customer Identification",
+  "confidence": 0.95,
+  "method": "FEEDBACK_STRONG_ACCEPT",
+  "reason": "Selected due to strong user acceptance history"
+}
+```
+
+---
+
+## Unified Confidence Model
+
+The platform combines:
+
+- Rule score
+- Semantic score
+- Feedback score
+
+into a calibrated confidence evaluation.
+
+This enables:
+
+- Stable orchestration
+- Confidence governance
+- Controlled persistence
+
+---
+
+## Stability Layer
+
+Prevents mapping flip-flops caused by tiny confidence changes.
+
+Example:
+
+| Existing Mapping | Score |
+|---|---|
+| Customer Identification | 0.81 |
+
+| New Candidate | Score |
+|---|---|
+| Client ID | 0.82 |
+
+Tiny score differences do not immediately replace stable mappings.
+
+---
+
+## Governance Layer
+
+Introduced controlled AI governance states.
+
+| Confidence | Governance |
+|---|---|
+| ≥ 0.90 | AUTO_APPROVED |
+| 0.70 – 0.89 | REVIEW_REQUIRED |
+| < 0.70 | BLOCKED_LOW_CONFIDENCE |
+
+This prevents unsafe AI persistence.
+
+---
+
+## AI Guardrails
+
+Implemented deterministic AI safety controls.
+
+### Includes
+
+- Structure validation
+- Confidence floor validation
+- Target existence validation
+- Hallucination prevention
+- Controlled persistence
+
+---
+
+# 🗄️ Data Storage (PostgreSQL)
+
+Uses PostgreSQL with JSONB support.
+
+## Stores
+
+- Workflow metadata
+- Uploaded worksheets
+- Transformation steps
+- Snapshots
+- Mapping configuration
+- Feedback history
+- Execution logs
+- Decision traces
+
+---
+
+# 📦 Tech Stack
+
+## Backend
+
+- FastAPI
+- SQLAlchemy
+- PostgreSQL
+- Pydantic
+
+## Workflow Orchestration
+
+- Temporal
+
+## AI & Semantic Search
+
+- OpenAI Embeddings
+- Pinecone
+- Vector Similarity Search
+
+## Data Processing
+
+- Pandas
+- OpenPyXL
+
+## Frontend (Planned)
+
+- Next.js
+- Redux
+- Material UI
+- Tailwind CSS
+
+## Cloud & Deployment
+
+- AWS EC2
+- AWS RDS
+- Docker
+- Amazon S3
+- CloudWatch
+- AWS Secrets Manager
+
+---
+
+# 🔄 End-to-End AI Orchestration Pipeline
+
+```text
+Semantic Retrieval
+    ↓
+Feedback Reranking
+    ↓
+Confidence Calibration
+    ↓
+Stability Layer
+    ↓
+Governance Layer
+    ↓
+AI Guardrails
+    ↓
+Controlled Persistence
+```
+
+---
+
+# 🧠 Key Design Principles
+
+## Deterministic AI Orchestration
+
+AI suggestions are always controlled through:
+
+- governance
+- confidence thresholds
+- stability rules
+- deterministic orchestration
+
+---
+
+## Explainability First
+
+Every mapping decision must be:
+
+- traceable
+- explainable
+- auditable
+
+---
+
+## PostgreSQL as Source of Truth
+
+The platform keeps PostgreSQL as the authoritative data source.
+
+---
+
+## Adaptive Learning Without Retraining
+
+The platform learns dynamically using:
+
+- feedback memory
+- score adjustments
+- temporal weighting
+
+without requiring expensive model retraining.
+
+---
+
+# 📊 Project Evolution
+
+| Phase | Capability |
+|---|---|
+| Phase 1–5 | Workflow foundation & Temporal orchestration |
+| Phase 7 | AI mapping engine |
+| Phase 9 | Feedback learning |
+| Phase 10 | Adaptive intelligence |
+| Phase 11 | Governed AI platform |
+
+---
+
+# 🚀 Running the Project
+
+## Create Virtual Environment
 
 ```bash
-# Create virtual environment
 python -m venv venv
+```
 
-# Activate (Windows)
+## Activate Environment (Windows)
+
+```bash
 venv\Scripts\activate
+```
 
-# Install dependencies
+## Install Dependencies
+
+```bash
 pip install -r requirements.txt
+```
 
-# Run server
+## Start FastAPI Server
+
+```bash
 uvicorn app.main:app --reload
 ```
 
 ---
 
-## 📌 Notes
+# 🧪 Testing
 
-This project is designed as a **scalable backend system** for data transformation and mapping workflows, with future support for AI-driven automation and workflow orchestration.
+Run all tests:
+
+```bash
+pytest tests/ -v
+```
+
+Example test areas:
+
+- Governance testing
+- Stability testing
+- Guardrail validation
+- End-to-end orchestration
+- Feedback learning
+- Decision trace validation
 
 ---
+
+# ☁️ AWS Deployment Roadmap
+
+Planned deployment architecture includes:
+
+- AWS EC2
+- AWS RDS PostgreSQL
+- Docker containers
+- Amazon S3
+- AWS CloudWatch
+- Elastic Load Balancer
+- AWS Secrets Manager
+
+---
+
+# 🧠 Final Engineering Insight
+
+A major architectural lesson from this project:
+
+> Enterprise AI systems require orchestration, governance, stability, and explainability more than generation alone.
+
+SchemaFlow-AI focuses on building:
+
+# ✅ Governed Adaptive AI Infrastructure
+
+rather than a simple LLM wrapper or RAG demo.
+
+---
+
+# 🔗 Project Repository
+
+GitHub:
+
+https://github.com/santoshnarayanan/SchemaFlow-AI
+
