@@ -22,6 +22,12 @@ from app.services.pinecone_service import query_vector
 from app.repositories import mapping_repo
 from app.services.stability_service import should_replace_mapping
 from app.services.governance_service import evaluate_governance
+from app.services.guardrail_service import (
+    validate_mapping_structure,
+    validate_confidence_floor,
+    validate_target_exists
+)
+
 
 from datetime import datetime
 import uuid
@@ -759,6 +765,61 @@ def suggest_mapping(
     decision_trace["stability_trace"] = stability_trace
 
     # =========================================
+    # 🟣 STEP 7 — AI GUARDRAILS
+    # Deterministic validation layer
+    # =========================================
+
+    # Available target columns
+    # ⚠️ Later replace with dynamic DB/template lookup
+    available_targets = [
+        "Customer Identification",
+        "Client ID"
+    ]
+
+    # -----------------------------------------
+    # Structure Validation
+    # -----------------------------------------
+    structure_validation = validate_mapping_structure(
+        mapping
+    )
+
+    # -----------------------------------------
+    # Confidence Floor Validation
+    # -----------------------------------------
+    confidence_validation = validate_confidence_floor(
+        mapping["confidence"]
+    )
+
+    # -----------------------------------------
+    # Target Existence Validation
+    # -----------------------------------------
+    target_validation = validate_target_exists(
+        mapping["target"],
+        available_targets
+    )
+
+    # =========================================
+    # 🟣 COMBINED GUARDRAIL RESULT
+    # =========================================
+    guardrail_valid = all([
+        structure_validation["valid"],
+        confidence_validation["valid"],
+        target_validation["valid"]
+    ])
+
+    # =========================================
+    # 🟣 GUARDRAIL TRACE
+    # =========================================
+    guardrail_trace = {
+        "guardrail_passed": guardrail_valid,
+        "structure_validation": structure_validation,
+        "confidence_validation": confidence_validation,
+        "target_validation": target_validation
+    }
+
+    decision_trace["guardrail_trace"] = guardrail_trace
+
+    # =========================================
     # 🟣 STEP 6 — GOVERNANCE TRACE
     # =========================================
     decision_trace["governance"] = governance
@@ -796,9 +857,16 @@ def suggest_mapping(
     # - stability allows replacement
     # - governance allows persistence
     # =========================================
+    # 🟣 STEP 7 — GUARDRAIL ENFORCEMENT
+    # Persist only if:
+    # - stability passes
+    # - governance allows
+    # - guardrails pass
+    # =========================================
     if (
-            should_replace and
-            governance["status"] != "BLOCKED_LOW_CONFIDENCE"
+        should_replace and
+        governance["status"] != "BLOCKED_LOW_CONFIDENCE" and
+        guardrail_valid
     ):
         mapping_repo.save_or_update_mapping(
             db=db,
@@ -817,5 +885,6 @@ def suggest_mapping(
                 should_replace and
                 governance["status"] != "BLOCKED_LOW_CONFIDENCE"
         ),
-        "governance": governance
+        "governance": governance,
+        "guardrails": guardrail_trace
     }
