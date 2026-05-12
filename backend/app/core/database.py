@@ -2,7 +2,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 
-DATABASE_URL = "postgresql://datamapper:datamapper@localhost/datamapper"
+# DATABASE_URL = "postgresql://datamapper:datamapper@localhost/datamapper"
+DATABASE_URL="postgresql://datamapper:datamapper@localhost/SchemaFlowAI"
 
 engine = create_engine(DATABASE_URL)
 

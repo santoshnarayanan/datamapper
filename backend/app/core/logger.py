@@ -19,7 +19,7 @@ class JsonFormatter(logging.Formatter):
 
 
 def get_logger():
-    logger = logging.getLogger("datamapper")
+    logger = logging.getLogger("schemaflowai")
     logger.setLevel(logging.INFO)
 
     if not logger.handlers:
